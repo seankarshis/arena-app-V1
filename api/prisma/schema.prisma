@@ -1,0 +1,276 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tag {
+  id        String   @id @default(uuid()) @db.Uuid
+  label     String   @unique @db.VarChar(255)
+  tagType   String   @map("tag_type") @db.VarChar(50)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  questionTags QuestionTag[]
+  userTags     UserTag[]
+
+  @@index([tagType, isActive], name: "idx_tags_tag_type_is_active")
+  @@map("tags")
+}
+
+model Question {
+  id        String   @id @default(uuid()) @db.Uuid
+  text      String   @db.Text
+  category  String   @db.VarChar(100)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  questionTags       QuestionTag[]
+  templateQuestions  TemplateQuestion[]
+  interviewResponses InterviewResponse[]
+  responseDrafts     ResponseDraft[]
+
+  @@index([isActive], name: "idx_questions_is_active")
+  @@map("questions")
+}
+
+model QuestionTag {
+  questionId String   @map("question_id") @db.Uuid
+  tagId      String   @map("tag_id") @db.Uuid
+  question   Question @relation(fields: [questionId], references: [id])
+  tag        Tag      @relation(fields: [tagId], references: [id])
+
+  @@id([questionId, tagId])
+  @@map("question_tags")
+}
+
+model User {
+  id        String   @id @db.Uuid
+  name      String   @db.VarChar(255)
+  email     String   @unique @db.VarChar(255)
+  role      String   @default("user") @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  userTags                    UserTag[]
+  userTemplates               UserTemplate[]              @relation("UserTemplateUser")
+  assignedUserTemplates       UserTemplate[]              @relation("UserTemplateAssignedBy")
+  templateAssignmentHistories TemplateAssignmentHistory[] @relation("AssignmentHistoryUser")
+  assignedHistories           TemplateAssignmentHistory[] @relation("AssignmentHistoryAssignedBy")
+  interviews                  Interview[]
+  consentRecords              UserConsentRecord[]
+  auditLogs                   AdminAuditLog[]
+
+  @@map("users")
+}
+
+model UserTag {
+  userId String @map("user_id") @db.Uuid
+  tagId  String @map("tag_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id])
+  tag    Tag    @relation(fields: [tagId], references: [id])
+
+  @@id([userId, tagId])
+  @@map("user_tags")
+}
+
+model UserTemplate {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  templateId  String    @map("template_id") @db.Uuid
+  assignedAt  DateTime  @default(now()) @map("assigned_at") @db.Timestamptz
+  assignedBy  String    @map("assigned_by") @db.Uuid
+  status      String    @default("active") @db.VarChar(20)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  removedAt   DateTime? @map("removed_at") @db.Timestamptz
+
+  user           User              @relation("UserTemplateUser", fields: [userId], references: [id])
+  template       InterviewTemplate @relation(fields: [templateId], references: [id])
+  assignedByUser User              @relation("UserTemplateAssignedBy", fields: [assignedBy], references: [id])
+
+  @@unique([userId, templateId], name: "uq_user_templates_user_template_active")
+  @@index([userId, status], name: "idx_user_templates_user_id_status")
+  @@index([templateId, status], name: "idx_user_templates_template_id_status")
+  @@map("user_templates")
+}
+
+model TemplateAssignmentHistory {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  templateId       String    @map("template_id") @db.Uuid
+  assignedAt       DateTime  @default(now()) @map("assigned_at") @db.Timestamptz
+  assignedBy       String    @map("assigned_by") @db.Uuid
+  unassignedAt     DateTime? @map("unassigned_at") @db.Timestamptz
+  unassignedReason String?   @map("unassigned_reason") @db.VarChar(100)
+
+  user           User              @relation("AssignmentHistoryUser", fields: [userId], references: [id])
+  template       InterviewTemplate @relation(fields: [templateId], references: [id])
+  assignedByUser User              @relation("AssignmentHistoryAssignedBy", fields: [assignedBy], references: [id])
+
+  @@index([userId], name: "idx_template_assignment_history_user_id")
+  @@map("template_assignment_history")
+}
+
+model InterviewTemplate {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  status      String   @default("draft") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  templateQuestions           TemplateQuestion[]
+  userTemplates               UserTemplate[]
+  templateAssignmentHistories TemplateAssignmentHistory[]
+  interviews                  Interview[]
+
+  @@index([status], name: "idx_interview_templates_status")
+  @@map("interview_templates")
+}
+
+model TemplateQuestion {
+  id               String   @id @default(uuid()) @db.Uuid
+  templateId       String   @map("template_id") @db.Uuid
+  questionId       String   @map("question_id") @db.Uuid
+  sequenceOrder    Int      @map("sequence_order")
+  categoryBucket   String   @map("category_bucket") @db.VarChar(100)
+  isRequired       Boolean  @default(true) @map("is_required")
+  followupTriggers Json     @default("[]") @map("followup_triggers") @db.JsonB
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  template InterviewTemplate @relation(fields: [templateId], references: [id])
+  question Question          @relation(fields: [questionId], references: [id])
+
+  @@unique([templateId, questionId], name: "uq_template_questions_template_question")
+  @@unique([templateId, sequenceOrder], name: "uq_template_questions_template_sequence")
+  @@map("template_questions")
+}
+
+model Interview {
+  id                       String    @id @default(uuid()) @db.Uuid
+  userId                   String    @map("user_id") @db.Uuid
+  templateId               String    @map("template_id") @db.Uuid
+  status                   String    @default("scheduled") @db.VarChar(20)
+  sessionSnapshot          Json?     @map("session_snapshot") @db.JsonB
+  pausedAt                 DateTime? @map("paused_at") @db.Timestamptz
+  startedAt                DateTime? @map("started_at") @db.Timestamptz
+  completedAt              DateTime? @map("completed_at") @db.Timestamptz
+  totalLlmPromptTokens     Int       @default(0) @map("total_llm_prompt_tokens")
+  totalLlmCompletionTokens Int       @default(0) @map("total_llm_completion_tokens")
+  totalSttDurationSeconds  Decimal   @default(0) @map("total_stt_duration_seconds") @db.Decimal(10, 2)
+  totalTtsCharacters       Int       @default(0) @map("total_tts_characters")
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user      User                @relation(fields: [userId], references: [id])
+  template  InterviewTemplate   @relation(fields: [templateId], references: [id])
+  responses InterviewResponse[]
+  drafts    ResponseDraft[]
+
+  @@index([userId, status], name: "idx_interviews_user_id_status")
+  @@index([status, pausedAt], name: "idx_interviews_status_paused_at")
+  @@map("interviews")
+}
+
+model InterviewResponse {
+  id                       String    @id @default(uuid()) @db.Uuid
+  interviewId              String    @map("interview_id") @db.Uuid
+  questionId               String    @map("question_id") @db.Uuid
+  questionTextAsAsked      String    @map("question_text_as_asked") @db.Text
+  sequenceNumber           Int       @map("sequence_number")
+  tagsAtTime               Json      @default("[]") @map("tags_at_time") @db.JsonB
+  categoryBucket           String?   @map("category_bucket") @db.VarChar(100)
+  isFollowup               Boolean   @default(false) @map("is_followup")
+  parentResponseId         String?   @map("parent_response_id") @db.Uuid
+  isSkipped                Boolean   @default(false) @map("is_skipped")
+  inputMode                String    @default("voice") @map("input_mode") @db.VarChar(10)
+  s3AudioKey               String?   @map("s3_audio_key") @db.VarChar(1024)
+  s3AudioBucket            String?   @map("s3_audio_bucket") @db.VarChar(255)
+  audioMimeType            String?   @map("audio_mime_type") @db.VarChar(100)
+  audioDurationSeconds     Decimal?  @map("audio_duration_seconds") @db.Decimal(10, 2)
+  audioUploadStatus        String    @default("not_applicable") @map("audio_upload_status") @db.VarChar(20)
+  sttEngine                String?   @map("stt_engine") @db.VarChar(100)
+  rawTranscription         String?   @map("raw_transcription") @db.Text
+  sttConfidenceScore       Decimal?  @map("stt_confidence_score") @db.Decimal(5, 4)
+  cleanedMarkdown          String?   @map("cleaned_markdown") @db.Text
+  cleaningModel            String?   @map("cleaning_model") @db.VarChar(100)
+  cleanedAt                DateTime? @map("cleaned_at") @db.Timestamptz
+  processingStatus         String    @default("pending") @map("processing_status") @db.VarChar(20)
+  errorMessage             String?   @map("error_message") @db.Text
+  llmPromptTokens          Int?      @map("llm_prompt_tokens")
+  llmCompletionTokens      Int?      @map("llm_completion_tokens")
+  llmModel                 String?   @map("llm_model") @db.VarChar(100)
+  llmLatencyMs             Int?      @map("llm_latency_ms")
+  sttDurationBilledSeconds Decimal?  @map("stt_duration_billed_seconds") @db.Decimal(10, 2)
+  ttsCharactersBilled      Int?      @map("tts_characters_billed")
+  respondedAt              DateTime  @default(now()) @map("responded_at") @db.Timestamptz
+
+  interview      Interview           @relation(fields: [interviewId], references: [id])
+  question       Question            @relation(fields: [questionId], references: [id])
+  parentResponse InterviewResponse?  @relation("FollowupResponses", fields: [parentResponseId], references: [id])
+  childResponses InterviewResponse[] @relation("FollowupResponses")
+
+  @@index([interviewId, processingStatus], name: "idx_interview_responses_interview_processing")
+  @@index([processingStatus, respondedAt], name: "idx_interview_responses_processing_responded")
+  @@index([inputMode, audioUploadStatus, respondedAt], name: "idx_interview_responses_audio_reconciliation")
+  @@map("interview_responses")
+}
+
+model ResponseDraft {
+  id                   String   @id @default(uuid()) @db.Uuid
+  interviewId          String   @map("interview_id") @db.Uuid
+  questionId           String?  @map("question_id") @db.Uuid
+  draftNumber          Int      @map("draft_number")
+  content              String   @db.Text
+  inputMode            String   @map("input_mode") @db.VarChar(10)
+  sttConfidenceScore   Decimal? @map("stt_confidence_score") @db.Decimal(5, 4)
+  s3AudioKey           String?  @map("s3_audio_key") @db.VarChar(1024)
+  s3AudioBucket        String?  @map("s3_audio_bucket") @db.VarChar(255)
+  audioMimeType        String?  @map("audio_mime_type") @db.VarChar(100)
+  audioDurationSeconds Decimal? @map("audio_duration_seconds") @db.Decimal(10, 2)
+  audioUploadStatus    String?  @default("pending") @map("audio_upload_status") @db.VarChar(20)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  interview Interview @relation(fields: [interviewId], references: [id])
+  question  Question? @relation(fields: [questionId], references: [id])
+
+  @@unique([interviewId, questionId, draftNumber], name: "uq_response_drafts_interview_question_draft")
+  @@index([interviewId, questionId], name: "idx_response_drafts_interview_question")
+  @@map("response_drafts")
+}
+
+model UserConsentRecord {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  consentType    String    @map("consent_type") @db.VarChar(50)
+  consentVersion String    @map("consent_version") @db.VarChar(20)
+  grantedAt      DateTime  @default(now()) @map("granted_at") @db.Timestamptz
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz
+  ipAddress      String?   @map("ip_address") @db.VarChar(45)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, consentType, consentVersion], name: "uq_user_consent_active")
+  @@index([userId, consentType], name: "idx_user_consent_records_user_consent_type")
+  @@map("user_consent_records")
+}
+
+model AdminAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
+  action     String   @db.VarChar(100)
+  entityType String   @map("entity_type") @db.VarChar(50)
+  entityId   String   @map("entity_id") @db.Uuid
+  changes    Json     @default("{}") @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId], name: "idx_admin_audit_log_entity")
+  @@index([actorId, createdAt], name: "idx_admin_audit_log_actor_created")
+  @@map("admin_audit_log")
+}
