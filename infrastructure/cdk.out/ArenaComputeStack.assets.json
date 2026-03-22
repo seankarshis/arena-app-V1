@@ -1,16 +1,46 @@
 {
   "version": "52.0.0",
   "files": {
-    "9e2132d8b452dc1b4874f66a2d63cc1b0b5382d203589648ffc4811776231dba": {
+    "7fa1e366ee8a9ded01fc355f704cff92bfd179574e6f9cfee800a3541df1b200": {
+      "displayName": "ArenaComputeStack/Custom::VpcRestrictDefaultSGCustomResourceProvider Code",
+      "source": {
+        "path": "asset.7fa1e366ee8a9ded01fc355f704cff92bfd179574e6f9cfee800a3541df1b200",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "776735194544-us-east-2-8fbad267": {
+          "bucketName": "cdk-hnb659fds-assets-776735194544-us-east-2",
+          "objectKey": "7fa1e366ee8a9ded01fc355f704cff92bfd179574e6f9cfee800a3541df1b200.zip",
+          "region": "us-east-2",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::776735194544:role/cdk-hnb659fds-file-publishing-role-776735194544-us-east-2"
+        }
+      }
+    },
+    "598ea5c5e79c1bd9da988c4d29ee83de0e2e961f293132f132e6585e42c5243f": {
+      "displayName": "CleaningLambda/Code",
+      "source": {
+        "path": "asset.598ea5c5e79c1bd9da988c4d29ee83de0e2e961f293132f132e6585e42c5243f",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "776735194544-us-east-2-70207a13": {
+          "bucketName": "cdk-hnb659fds-assets-776735194544-us-east-2",
+          "objectKey": "598ea5c5e79c1bd9da988c4d29ee83de0e2e961f293132f132e6585e42c5243f.zip",
+          "region": "us-east-2",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::776735194544:role/cdk-hnb659fds-file-publishing-role-776735194544-us-east-2"
+        }
+      }
+    },
+    "914823e3ed6f9a83db61450265dc94a189f04411441a8eb9170bfbd38cc2dc11": {
       "displayName": "ArenaComputeStack Template",
       "source": {
         "path": "ArenaComputeStack.template.json",
         "packaging": "file"
       },
       "destinations": {
-        "776735194544-us-east-2-8d986a25": {
+        "776735194544-us-east-2-f463fc1e": {
           "bucketName": "cdk-hnb659fds-assets-776735194544-us-east-2",
-          "objectKey": "9e2132d8b452dc1b4874f66a2d63cc1b0b5382d203589648ffc4811776231dba.json",
+          "objectKey": "914823e3ed6f9a83db61450265dc94a189f04411441a8eb9170bfbd38cc2dc11.json",
           "region": "us-east-2",
           "assumeRoleArn": "arn:${AWS::Partition}:iam::776735194544:role/cdk-hnb659fds-file-publishing-role-776735194544-us-east-2"
         }

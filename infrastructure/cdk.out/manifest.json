@@ -66,7 +66,6 @@
         }
       },
       "dependencies": [
-        "ArenaFoundationStack",
         "ArenaDataStack.assets"
       ],
       "additionalMetadataFile": "ArenaDataStack.metadata.json",
@@ -89,7 +88,7 @@
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::776735194544:role/cdk-hnb659fds-deploy-role-776735194544-us-east-2",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::776735194544:role/cdk-hnb659fds-cfn-exec-role-776735194544-us-east-2",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-776735194544-us-east-2/9e2132d8b452dc1b4874f66a2d63cc1b0b5382d203589648ffc4811776231dba.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-776735194544-us-east-2/914823e3ed6f9a83db61450265dc94a189f04411441a8eb9170bfbd38cc2dc11.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
@@ -102,7 +101,6 @@
         }
       },
       "dependencies": [
-        "ArenaDataStack",
         "ArenaComputeStack.assets"
       ],
       "additionalMetadataFile": "ArenaComputeStack.metadata.json",
@@ -216,6 +214,7 @@
             "explanation": "Error on snapshot removal policies on resources that do not support it."
           },
           "@aws-cdk/aws-codepipeline:crossAccountKeyAliasStackSafeResourceName": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Generate key aliases that include the stack name"
           },
@@ -225,6 +224,7 @@
             "explanation": "Enable this feature flag to create an S3 bucket policy by default in cases where an AWS service would automatically create the Policy if one does not exist."
           },
           "@aws-cdk/aws-sns-subscriptions:restrictSqsDescryption": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Restrict KMS key policy for encrypted Queues a bit more"
           },
@@ -239,6 +239,7 @@
             "explanation": "Make ARNs concrete if AWS partition is known"
           },
           "@aws-cdk/aws-events:eventsTargetQueueSameAccount": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Event Rules may only push to encrypted SQS queues in the same account"
           },
@@ -258,42 +259,52 @@
             "explanation": "Use S3 Bucket Policy instead of ACLs for Server Access Logging"
           },
           "@aws-cdk/aws-route53-patters:useCertificate": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Use the official `Certificate` resource instead of `DnsValidatedCertificate`"
           },
           "@aws-cdk/customresources:installLatestAwsSdkDefault": {
+            "userValue": false,
             "recommendedValue": false,
             "explanation": "Whether to install the latest SDK by default in AwsCustomResource"
           },
           "@aws-cdk/aws-rds:databaseProxyUniqueResourceName": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Use unique resource name for Database Proxy"
           },
           "@aws-cdk/aws-codedeploy:removeAlarmsFromDeploymentGroup": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Remove CloudWatch alarms from deployment group"
           },
           "@aws-cdk/aws-apigateway:authorizerChangeDeploymentLogicalId": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Include authorizer configuration in the calculation of the API deployment logical ID."
           },
           "@aws-cdk/aws-ec2:launchTemplateDefaultUserData": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Define user data for a launch template by default when a machine image is provided."
           },
           "@aws-cdk/aws-secretsmanager:useAttachedSecretResourcePolicyForSecretTargetAttachments": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "SecretTargetAttachments uses the ResourcePolicy of the attached Secret."
           },
           "@aws-cdk/aws-redshift:columnId": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Whether to use an ID to track Redshift column changes"
           },
           "@aws-cdk/aws-stepfunctions-tasks:enableEmrServicePolicyV2": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Enable AmazonEMRServicePolicy_v2 managed policies"
           },
           "@aws-cdk/aws-ec2:restrictDefaultSecurityGroup": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "Restrict access to the VPC default security group"
           },
@@ -346,7 +357,6 @@
             "explanation": "When enabled, creating an RDS database cluster from a snapshot will only render credentials for snapshot credentials."
           },
           "@aws-cdk/aws-codepipeline-actions:useNewDefaultBranchForCodeCommitSource": {
-            "userValue": true,
             "recommendedValue": true,
             "explanation": "When enabled, the CodeCommit source action is using the default branch name 'main'."
           },
@@ -382,6 +392,7 @@
             "explanation": "When enabled, EKS V2 clusters will use the native OIDC provider resource AWS::IAM::OIDCProvider instead of creating the OIDCProvider with a custom resource (iam.OpenIDConnectProvider)."
           },
           "@aws-cdk/aws-ec2:ebsDefaultGp3Volume": {
+            "userValue": true,
             "recommendedValue": true,
             "explanation": "When enabled, the default volume type of the EBS volume will be GP3"
           },

@@ -1,4 +1,34 @@
 {
+  "/ArenaComputeStack/Custom::VpcRestrictDefaultSGCustomResourceProvider": [
+    {
+      "type": "aws:cdk:is-custom-resource-handler-customResourceProvider",
+      "data": true
+    }
+  ],
+  "/ArenaComputeStack/AlbDnsName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AlbDnsName"
+    }
+  ],
+  "/ArenaComputeStack/ClusterArn": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ClusterArn"
+    }
+  ],
+  "/ArenaComputeStack/CleaningQueueUrl": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CleaningQueueUrl"
+    }
+  ],
+  "/ArenaComputeStack/CleaningDlqUrl": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CleaningDlqUrl"
+    }
+  ],
   "/ArenaComputeStack/BootstrapVersion": [
     {
       "type": "aws:cdk:logicalId",
@@ -11,10 +41,400 @@
       "data": "CheckBootstrapVersion"
     }
   ],
+  "/ArenaComputeStack/ArenaVpc/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcF062C5C3"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/IGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcIGWC03A6271"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/VPCGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcVPCGWAE2D0018"
+    }
+  ],
+  "/ArenaComputeStack/Custom::VpcRestrictDefaultSGCustomResourceProvider/Role": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CustomVpcRestrictDefaultSGCustomResourceProviderRole26592FE0"
+    }
+  ],
+  "/ArenaComputeStack/Custom::VpcRestrictDefaultSGCustomResourceProvider/Handler": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CustomVpcRestrictDefaultSGCustomResourceProviderHandlerDC833E5E"
+    }
+  ],
+  "/ArenaComputeStack/ArenaCluster/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaCluster80C9080E"
+    }
+  ],
+  "/ArenaComputeStack/ArenaAlb/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaAlb34A4DA39"
+    }
+  ],
+  "/ArenaComputeStack/ApiTaskDef/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDef37DBDBD0"
+    }
+  ],
+  "/ArenaComputeStack/ApiService/Service": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiServiceC9037CF0"
+    }
+  ],
+  "/ArenaComputeStack/FrontendTaskDef/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FrontendTaskDef7D3FD156"
+    }
+  ],
+  "/ArenaComputeStack/FrontendService/Service": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FrontendServiceBC94BA93"
+    }
+  ],
+  "/ArenaComputeStack/CleaningDlq/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CleaningDlq1602D6AB"
+    }
+  ],
+  "/ArenaComputeStack/CleaningQueue/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CleaningQueue5075473C"
+    }
+  ],
+  "/ArenaComputeStack/CleaningLambdaLogs/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CleaningLambdaLogsF8189FED"
+    }
+  ],
+  "/ArenaComputeStack/CleaningLambda/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CleaningLambda8E1B9246"
+    }
+  ],
+  "/ArenaComputeStack/InterviewCompletionRule/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "InterviewCompletionRule51462825"
+    }
+  ],
+  "/ArenaComputeStack/ReconciliationLambdaLogs/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ReconciliationLambdaLogs6ECAA5E7"
+    }
+  ],
+  "/ArenaComputeStack/ReconciliationLambda/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ReconciliationLambda48A3990B"
+    }
+  ],
+  "/ArenaComputeStack/ReconciliationSchedule/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ReconciliationScheduleAC121908"
+    }
+  ],
+  "/ArenaComputeStack/ReconciliationSchedule/AllowEventRuleArenaComputeStackReconciliationLambdaA3564A82": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ReconciliationScheduleAllowEventRuleArenaComputeStackReconciliationLambdaA3564A82A0B994F5"
+    }
+  ],
   "/ArenaComputeStack/CDKMetadata/Default": [
     {
       "type": "aws:cdk:logicalId",
       "data": "CDKMetadata"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PublicSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPublicSubnet1SubnetF46D6149"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PublicSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPublicSubnet1RouteTable373CBDA3"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PublicSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPublicSubnet1RouteTableAssociation0EB8485C"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PublicSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPublicSubnet1DefaultRoute27370A0F"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PublicSubnet1/EIP": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPublicSubnet1EIP3846A827"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PublicSubnet1/NATGateway": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPublicSubnet1NATGatewayCE9C4DE0"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PublicSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPublicSubnet2Subnet9D9E0E6B"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PublicSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPublicSubnet2RouteTableAD1BBF2C"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PublicSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPublicSubnet2RouteTableAssociationC07A96C4"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PublicSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPublicSubnet2DefaultRoute5CFABEA2"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PrivateSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPrivateSubnet1SubnetCFC3AEDB"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PrivateSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPrivateSubnet1RouteTable2B31B978"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PrivateSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPrivateSubnet1RouteTableAssociation8F8A1511"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PrivateSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPrivateSubnet1DefaultRouteE612512D"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PrivateSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPrivateSubnet2SubnetDE8BE823"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PrivateSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPrivateSubnet2RouteTableE0884427"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PrivateSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPrivateSubnet2RouteTableAssociation3B434418"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/PrivateSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcPrivateSubnet2DefaultRoute1D5A5E99"
+    }
+  ],
+  "/ArenaComputeStack/ArenaVpc/RestrictDefaultSecurityGroupCustomResource/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaVpcRestrictDefaultSecurityGroupCustomResource06D4B1F7"
+    }
+  ],
+  "/ArenaComputeStack/ArenaAlb/SecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaAlbSecurityGroupB88EC4FA"
+    }
+  ],
+  "/ArenaComputeStack/ArenaAlb/SecurityGroup/to ArenaComputeStackApiServiceSecurityGroup27DACF9D:80": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaAlbSecurityGrouptoArenaComputeStackApiServiceSecurityGroup27DACF9D805A3C5FC8"
+    }
+  ],
+  "/ArenaComputeStack/ArenaAlb/SecurityGroup/to ArenaComputeStackFrontendServiceSecurityGroupFCD1AACA:80": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaAlbSecurityGrouptoArenaComputeStackFrontendServiceSecurityGroupFCD1AACA804CA1AA50"
+    }
+  ],
+  "/ArenaComputeStack/ArenaAlb/HttpListener/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaAlbHttpListenerE282A924"
+    }
+  ],
+  "/ArenaComputeStack/ApiTaskDef/TaskRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDefTaskRole76FB19FA"
+    }
+  ],
+  "/ArenaComputeStack/ApiTaskDef/ExecutionRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDefExecutionRoleE6ABB053"
+    }
+  ],
+  "/ArenaComputeStack/ApiService/SecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiServiceSecurityGroupA2426F91"
+    }
+  ],
+  "/ArenaComputeStack/ApiService/SecurityGroup/from ArenaComputeStackArenaAlbSecurityGroup3192CB85:80": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiServiceSecurityGroupfromArenaComputeStackArenaAlbSecurityGroup3192CB85800935AF30"
+    }
+  ],
+  "/ArenaComputeStack/FrontendTaskDef/TaskRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FrontendTaskDefTaskRoleDA0FD037"
+    }
+  ],
+  "/ArenaComputeStack/FrontendTaskDef/ExecutionRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FrontendTaskDefExecutionRoleE7329A09"
+    }
+  ],
+  "/ArenaComputeStack/FrontendService/SecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FrontendServiceSecurityGroup85470DEC"
+    }
+  ],
+  "/ArenaComputeStack/FrontendService/SecurityGroup/from ArenaComputeStackArenaAlbSecurityGroup3192CB85:80": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FrontendServiceSecurityGroupfromArenaComputeStackArenaAlbSecurityGroup3192CB858054BBE1E6"
+    }
+  ],
+  "/ArenaComputeStack/CleaningQueue/Policy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CleaningQueuePolicyFA7A3CDB"
+    }
+  ],
+  "/ArenaComputeStack/CleaningLambda/ServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CleaningLambdaServiceRole36E9A9E1"
+    }
+  ],
+  "/ArenaComputeStack/CleaningLambda/SqsEventSource:ArenaComputeStackCleaningQueueB9F3C93C/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CleaningLambdaSqsEventSourceArenaComputeStackCleaningQueueB9F3C93CA1D8C847"
+    }
+  ],
+  "/ArenaComputeStack/ReconciliationLambda/ServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ReconciliationLambdaServiceRole697F2EB7"
+    }
+  ],
+  "/ArenaComputeStack/ArenaAlb/HttpListener/ApiTargetsGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaAlbHttpListenerApiTargetsGroupABA272BF"
+    }
+  ],
+  "/ArenaComputeStack/ArenaAlb/HttpListener/ApiTargetsRule/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaAlbHttpListenerApiTargetsRuleBE4994A2"
+    }
+  ],
+  "/ArenaComputeStack/ArenaAlb/HttpListener/FrontendTargetsGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ArenaAlbHttpListenerFrontendTargetsGroup775BB8E1"
+    }
+  ],
+  "/ArenaComputeStack/ApiTaskDef/api/LogGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDefapiLogGroup9FDF1262"
+    }
+  ],
+  "/ArenaComputeStack/ApiTaskDef/ExecutionRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiTaskDefExecutionRoleDefaultPolicy358EAD94"
+    }
+  ],
+  "/ArenaComputeStack/ApiService/TaskCount/Target/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiServiceTaskCountTargetBFC64025"
+    }
+  ],
+  "/ArenaComputeStack/FrontendTaskDef/frontend/LogGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FrontendTaskDeffrontendLogGroupFDDEEC5B"
+    }
+  ],
+  "/ArenaComputeStack/FrontendTaskDef/ExecutionRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FrontendTaskDefExecutionRoleDefaultPolicy48DF7F3B"
+    }
+  ],
+  "/ArenaComputeStack/CleaningLambda/ServiceRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CleaningLambdaServiceRoleDefaultPolicy66D509FF"
+    }
+  ],
+  "/ArenaComputeStack/ApiService/TaskCount/Target/ApiCpuScaling/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiServiceTaskCountTargetApiCpuScaling8D795804"
     }
   ]
 }
