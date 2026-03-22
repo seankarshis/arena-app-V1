@@ -1,4 +1,14 @@
+import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaEvents from 'aws-cdk-lib/aws-lambda-event-sources';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 import { Construct } from 'constructs';
 import { FoundationStack } from './foundation-stack';
 import { DataStack } from './data-stack';
@@ -9,21 +19,215 @@ export interface ComputeStackProps extends cdk.StackProps {
 }
 
 /**
- * ComputeStack — ECS Fargate cluster, ALB, API server service,
- * frontend service, STT proxy service, and Lambda functions.
- *
- * No resources are provisioned yet. This is a scaffold stub.
+ * ComputeStack — ECS Fargate cluster, ALB with path-based routing,
+ * API and Frontend services (placeholder nginx), Lambda functions
+ * for cleaning and reconciliation, SQS queues, and EventBridge rules.
  */
 export class ComputeStack extends cdk.Stack {
+  public readonly vpc: ec2.Vpc;
+  public readonly cluster: ecs.Cluster;
+  public readonly alb: elbv2.ApplicationLoadBalancer;
+  public readonly apiService: ecs.FargateService;
+  public readonly frontendService: ecs.FargateService;
+  public readonly cleaningQueue: sqs.Queue;
+  public readonly cleaningDlq: sqs.Queue;
+  public readonly cleaningLambda: lambda.Function;
+  public readonly reconciliationLambda: lambda.Function;
+
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
 
-    // TODO: ECS Fargate cluster shared by API, frontend, and STT proxy services
-    // TODO: Application Load Balancer with path-based routing
-    // TODO: Fastify API server service (with Apollo Server + WebSocket STT proxy)
-    // TODO: Next.js frontend service
-    // TODO: Lambda: LLM cleaning pipeline (Node.js 20, Claude API)
-    // TODO: Lambda: Cognito post-confirmation user sync trigger
-    // TODO: Lambda: Reconciliation job (stuck turns, audio uploads, auto-abandonment, data retention)
+    // ── VPC ────────────────────────────────────────────────────────────
+    // Created here until FoundationStack exposes its own VPC.
+    this.vpc = new ec2.Vpc(this, 'ArenaVpc', {
+      maxAzs: 2,
+      natGateways: 1,
+    });
+
+    // ── ECS Cluster ───────────────────────────────────────────────────
+    this.cluster = new ecs.Cluster(this, 'ArenaCluster', {
+      vpc: this.vpc,
+      clusterName: 'arena-cluster',
+      containerInsightsV2: ecs.ContainerInsights.ENABLED,
+    });
+
+    // ── Application Load Balancer ─────────────────────────────────────
+    this.alb = new elbv2.ApplicationLoadBalancer(this, 'ArenaAlb', {
+      vpc: this.vpc,
+      internetFacing: true,
+    });
+
+    const listener = this.alb.addListener('HttpListener', {
+      port: 80,
+    });
+
+    // ── API Fargate Service ───────────────────────────────────────────
+    // Spec: 1 vCPU, 2GB, min 2 tasks, max 4 tasks (auto-scaling on CPU)
+    const apiTaskDef = new ecs.FargateTaskDefinition(this, 'ApiTaskDef', {
+      cpu: 1024,
+      memoryLimitMiB: 2048,
+    });
+
+    apiTaskDef.addContainer('api', {
+      image: ecs.ContainerImage.fromRegistry('nginx:alpine'),
+      portMappings: [{ containerPort: 80 }],
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'arena-api',
+        logRetention: logs.RetentionDays.ONE_MONTH,
+      }),
+    });
+
+    this.apiService = new ecs.FargateService(this, 'ApiService', {
+      cluster: this.cluster,
+      taskDefinition: apiTaskDef,
+      desiredCount: 2,
+      minHealthyPercent: 100,
+      maxHealthyPercent: 200,
+    });
+
+    const apiScaling = this.apiService.autoScaleTaskCount({
+      minCapacity: 2,
+      maxCapacity: 4,
+    });
+    apiScaling.scaleOnCpuUtilization('ApiCpuScaling', {
+      targetUtilizationPercent: 70,
+    });
+
+    // ── Frontend Fargate Service ──────────────────────────────────────
+    // Spec: 0.5 vCPU, 1GB, min 2 tasks
+    const frontendTaskDef = new ecs.FargateTaskDefinition(this, 'FrontendTaskDef', {
+      cpu: 512,
+      memoryLimitMiB: 1024,
+    });
+
+    frontendTaskDef.addContainer('frontend', {
+      image: ecs.ContainerImage.fromRegistry('nginx:alpine'),
+      portMappings: [{ containerPort: 80 }],
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'arena-frontend',
+        logRetention: logs.RetentionDays.ONE_MONTH,
+      }),
+    });
+
+    this.frontendService = new ecs.FargateService(this, 'FrontendService', {
+      cluster: this.cluster,
+      taskDefinition: frontendTaskDef,
+      desiredCount: 2,
+      minHealthyPercent: 100,
+      maxHealthyPercent: 200,
+    });
+
+    // ── ALB Path-Based Routing ────────────────────────────────────────
+    // /graphql and /api/* → API service; everything else → Frontend
+    listener.addTargets('ApiTargets', {
+      port: 80,
+      targets: [this.apiService],
+      healthCheck: { path: '/' },
+      conditions: [
+        elbv2.ListenerCondition.pathPatterns(['/graphql', '/graphql/*', '/api/*']),
+      ],
+      priority: 10,
+    });
+
+    listener.addTargets('FrontendTargets', {
+      port: 80,
+      targets: [this.frontendService],
+      healthCheck: { path: '/' },
+    });
+
+    // ── SQS: Cleaning Dead-Letter Queue ──────────────────────────────
+    this.cleaningDlq = new sqs.Queue(this, 'CleaningDlq', {
+      queueName: 'arena-cleaning-dlq',
+      retentionPeriod: cdk.Duration.days(14),
+    });
+
+    // ── SQS: Cleaning Queue ──────────────────────────────────────────
+    this.cleaningQueue = new sqs.Queue(this, 'CleaningQueue', {
+      queueName: 'arena-cleaning-queue',
+      visibilityTimeout: cdk.Duration.minutes(5),
+      deadLetterQueue: {
+        queue: this.cleaningDlq,
+        maxReceiveCount: 3,
+      },
+    });
+
+    // ── Lambda: Cleaning Handler ─────────────────────────────────────
+    const lambdaCodePath = path.join(__dirname, '../../api/src/lambda');
+
+    const cleaningLogGroup = new logs.LogGroup(this, 'CleaningLambdaLogs', {
+      logGroupName: '/aws/lambda/arena-cleaning',
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.cleaningLambda = new lambda.Function(this, 'CleaningLambda', {
+      functionName: 'arena-cleaning',
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'cleaning-handler.handler',
+      code: lambda.Code.fromAsset(lambdaCodePath),
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      logGroup: cleaningLogGroup,
+    });
+
+    // SQS triggers cleaning Lambda
+    this.cleaningLambda.addEventSource(
+      new lambdaEvents.SqsEventSource(this.cleaningQueue, {
+        batchSize: 1,
+      }),
+    );
+
+    // ── EventBridge: Interview Completion → Cleaning Queue ───────────
+    new events.Rule(this, 'InterviewCompletionRule', {
+      ruleName: 'arena-interview-completion',
+      eventPattern: {
+        source: ['arena.interview'],
+        detailType: ['InterviewCompleted'],
+      },
+    }).addTarget(new targets.SqsQueue(this.cleaningQueue));
+
+    // ── Lambda: Reconciliation Handler ───────────────────────────────
+    const reconciliationLogGroup = new logs.LogGroup(this, 'ReconciliationLambdaLogs', {
+      logGroupName: '/aws/lambda/arena-reconciliation',
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.reconciliationLambda = new lambda.Function(this, 'ReconciliationLambda', {
+      functionName: 'arena-reconciliation',
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'reconciliation-handler.handler',
+      code: lambda.Code.fromAsset(lambdaCodePath),
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      logGroup: reconciliationLogGroup,
+    });
+
+    // ── EventBridge: 15-Minute Reconciliation Schedule ────────────────
+    new events.Rule(this, 'ReconciliationSchedule', {
+      ruleName: 'arena-reconciliation-schedule',
+      schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
+    }).addTarget(new targets.LambdaFunction(this.reconciliationLambda));
+
+    // ── Stack Outputs ─────────────────────────────────────────────────
+    new cdk.CfnOutput(this, 'AlbDnsName', {
+      value: this.alb.loadBalancerDnsName,
+      description: 'ALB DNS name',
+    });
+
+    new cdk.CfnOutput(this, 'ClusterArn', {
+      value: this.cluster.clusterArn,
+      description: 'ECS Cluster ARN',
+    });
+
+    new cdk.CfnOutput(this, 'CleaningQueueUrl', {
+      value: this.cleaningQueue.queueUrl,
+      description: 'Cleaning SQS Queue URL',
+    });
+
+    new cdk.CfnOutput(this, 'CleaningDlqUrl', {
+      value: this.cleaningDlq.queueUrl,
+      description: 'Cleaning Dead-Letter Queue URL',
+    });
   }
 }
