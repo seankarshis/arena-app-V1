@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 export interface AuthUser {
@@ -207,7 +207,7 @@ export async function cognitoAuthHook(
     request.user = await verifyToken(token);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Token validation failed';
-    request.log.warn({ err }, 'JWT validation failed');
+    request.log.warn('JWT validation failed: %s', message);
     reply.code(401).send({
       errors: [{
         message,
