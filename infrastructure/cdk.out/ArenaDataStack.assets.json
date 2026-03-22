@@ -1,0 +1,21 @@
+{
+  "version": "52.0.0",
+  "files": {
+    "e9481be2ff4b41af718bd68de82d5cca2da8ad904492c4976c35aa4e472a1661": {
+      "displayName": "ArenaDataStack Template",
+      "source": {
+        "path": "ArenaDataStack.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "776735194544-us-east-2-dd36933e": {
+          "bucketName": "cdk-hnb659fds-assets-776735194544-us-east-2",
+          "objectKey": "e9481be2ff4b41af718bd68de82d5cca2da8ad904492c4976c35aa4e472a1661.json",
+          "region": "us-east-2",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::776735194544:role/cdk-hnb659fds-file-publishing-role-776735194544-us-east-2"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}
