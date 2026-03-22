@@ -1,0 +1,21 @@
+{
+  "version": "52.0.0",
+  "files": {
+    "9e2132d8b452dc1b4874f66a2d63cc1b0b5382d203589648ffc4811776231dba": {
+      "displayName": "ArenaComputeStack Template",
+      "source": {
+        "path": "ArenaComputeStack.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "776735194544-us-east-2-8d986a25": {
+          "bucketName": "cdk-hnb659fds-assets-776735194544-us-east-2",
+          "objectKey": "9e2132d8b452dc1b4874f66a2d63cc1b0b5382d203589648ffc4811776231dba.json",
+          "region": "us-east-2",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::776735194544:role/cdk-hnb659fds-file-publishing-role-776735194544-us-east-2"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}
