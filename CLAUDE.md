@@ -1,0 +1,160 @@
+# Arena — Elastic Horizon Interview Platform
+
+## CRITICAL: Directory Boundary
+
+**You are working in the Arena application repository. Your working directory is the repo root.**
+
+- All file paths are relative to this repo root
+- Do NOT attempt to access parent directories (`../`), sibling directories, or any path outside this repo
+- Do NOT read or reference any `.env` files outside this directory
+- Do NOT modify files in any directory you did not create
+- If you need information that isn't in your context or in this repo, say so — do not guess or look elsewhere
+
+## Naming Conventions
+
+- **elastichorizon**: The company and brand. Used in UI copyright notices, legal references, and public-facing content.
+- **Arena**: The internal platform codename. Used in code, repo names, internal docs, and infrastructure resource naming.
+
+## Repository Structure
+
+```
+/
+├── CLAUDE.md                  ← This file
+├── .env                       ← Arena platform secrets (never commit)
+├── brain/
+│   ├── specs/                 ← Authoritative build specifications (read-only)
+│   │   ├── interview-spec-v2.md
+│   │   ├── conversation-protocol-spec.md
+│   │   ├── developmentTasks.md
+│   │   └── brandStandards.md
+│   ├── architecture/          ← Living architecture docs (updated as build progresses)
+│   ├── decisions/             ← Architecture Decision Records (append-only)
+│   ├── tasks/                 ← Task specifications
+│   └── runbooks/              ← Operational procedures
+├── infrastructure/            ← AWS CDK stacks
+│   ├── lib/
+│   │   ├── foundation-stack.ts
+│   │   ├── data-stack.ts
+│   │   └── compute-stack.ts
+│   └── bin/app.ts
+├── api/                       ← Fastify + Apollo Server + Prisma
+│   ├── src/
+│   │   ├── server.ts
+│   │   ├── schema/
+│   │   ├── services/
+│   │   ├── middleware/
+│   │   ├── websocket/
+│   │   ├── sse/
+│   │   └── lambda/
+│   ├── prisma/
+│   │   ├── schema.prisma
+│   │   ├── migrations/
+│   │   └── seed.ts
+│   └── vitest.config.ts
+├── frontend/                  ← Next.js + React
+│   └── src/
+│       ├── app/
+│       ├── components/
+│       ├── lib/
+│       └── hooks/
+└── docker-compose.yml         ← Local dev: Postgres + Redis
+```
+
+Note: Many of these directories do not exist yet at the start of the build. They are created by tasks as the build progresses. Only reference files that have been explicitly listed in your task context or that you are creating.
+
+## Two Authoritative Specifications
+
+This project is defined by two specification documents. Both are authoritative within their domains.
+
+### interview-spec-v2.md
+**Authoritative for:** data model, technology stack, infrastructure (CDK/AWS), GraphQL schema design, admin interface specifications, post-interview cleaning pipeline, observability and error handling, authentication and authorization, local development environment, testing strategy, and performance budgets.
+
+### conversation-protocol-spec.md
+**Authoritative for:** runtime conversation behavior, audio architecture (push-to-talk, per-response segments, progressive upload), SSE streaming (message types, sentence boundary detection), frontend state machine (all states and transitions), pause/resume protocol, inactivity handling (idle timer, heartbeat, auto-pause), WebSocket STT proxy, TTS integration, error recovery during interviews, and interview UI layout.
+
+### Where They Conflict
+- **interview-spec-v2.md wins** on data model and schema decisions.
+- **conversation-protocol-spec.md wins** on runtime behavior and frontend state.
+- **KNOWN CONFLICT — RESOLVED:** conversation-protocol-spec.md Section 8 says to remove the `user_templates` junction table and use a `current_template_id` FK on the users table. **Ignore this.** Use the `user_templates` many-to-many junction table defined in interview-spec-v2.md Section 4. This is the settled decision.
+- If you discover a new conflict between the two specs, flag it clearly in your output. Do not guess which one wins — ask for clarification.
+
+### brandStandards.md
+Referenced ONLY when building UI components (frontend pages, React components). Never referenced for infrastructure, API, database, or Lambda work.
+
+### developmentTasks.md
+Defines the sequenced implementation plan. Each task specifies which sections of which spec documents to read. Follow those references.
+
+## Immutable Technical Constraints
+
+These constraints apply to ALL code in this repository. They are non-negotiable.
+
+### Framework Choices (Decided — Do Not Change)
+- **Backend: Fastify** — not Express. Fastify is the backend framework. Do not use Express anywhere in the Arena application code.
+- **Testing: Vitest** — not Jest. All tests use Vitest. Do not use Jest anywhere.
+- **ORM: Prisma** — all database access goes through Prisma. No raw SQL unless Prisma's query builder cannot express the operation.
+- **UI Components: shadcn/ui** — built on Radix primitives.
+- **GraphQL: Apollo Server** — runs as Fastify plugin via `@as-integrations/fastify`.
+
+### Data Integrity Rules
+- **No delete mutations.** `deleteTag`, `deleteQuestion`, and `deleteTemplate` mutations are explicitly prohibited. Use soft-delete instead: `updateTag` with `isActive: false`, `updateQuestion` with `isActive: false`, `updateTemplate` with `status: 'archived'`. Do not create delete mutations under any circumstances.
+- **Snapshots are the source of truth for historical data.** Never rely on joining back to master question records for interview analysis. The `question_text_as_asked` field captures the LLM's actual delivered text.
+- **Single Postgres transaction for response writes.** Never split a response write across multiple uncommitted operations.
+- **Redis is ephemeral.** The database is always the source of truth. If Redis data is lost, state is reconstructable from `interview_responses`.
+- **Tags are a controlled vocabulary.** No freeform tag creation by non-administrators.
+
+### Security and Privacy Rules
+- **No PII in telemetry.** ClickHouse receives only: UUIDs, error codes, stack traces, metrics, timestamps, model names, counts. NEVER: names, emails, transcription content, question text, audit log changes content.
+- **API keys in Secrets Manager only.** `arena/claude-api-key` and `arena/elevenlabs-api-key`. Never hardcode keys in application code.
+- **Cognito is the sole auth provider.** All API requests require a valid Cognito JWT (except local dev with bypass). User IDs correspond to Cognito `sub` claims.
+- **Audio binary data never routes through GraphQL.** Always use presigned S3 URLs for audio upload.
+- **Consent is required before interviews.** The `startInterview` mutation enforces that all required consent types are granted.
+
+### Interview Engine Rules
+- **The LLM evaluates follow-up triggers.** No application-side keyword matching, sentiment analysis, or word counting for trigger evaluation. Trigger definitions are passed in the LLM system prompt.
+- **The LLM works from a bounded question set.** Never pass the entire question bank into the interview prompt. Always pre-curate via the template.
+- **Interview mutations derive state from the backend.** `startInterview` uses the JWT identity. `submitResponse`, `skipQuestion`, `saveDraft` derive question context from Redis session state. The frontend never sends metadata the backend can determine itself.
+- **Atomic turn lock prevents race conditions.** The `is_streaming` Redis flag blocks submissions while the LLM is streaming. The backend is the authoritative enforcer.
+- **One active interview at a time per user.** A user may have at most one `in_progress` interview across all templates.
+
+### Error Handling
+- **All GraphQL errors use typed error codes** via Apollo Server's `extensions.code`. Standard codes: `NOT_FOUND`, `DUPLICATE_ENTRY`, `INVALID_STATE`, `UNAUTHORIZED`, `FORBIDDEN`, `VALIDATION_ERROR`, `INTERNAL_ERROR`, `EXTERNAL_SERVICE_ERROR`, `RATE_LIMITED`, `CONSENT_REQUIRED`.
+- **All admin mutations are audit-logged.** Prisma middleware writes to `admin_audit_log` in the same transaction.
+
+### Cost Tracking
+- **Every LLM call, STT session, and TTS generation records cost metrics** on the response record and increments interview totals.
+
+## Brand Standards (UI Work Only)
+
+When building UI components, apply these from `brandStandards.md`:
+- Interview UI uses **IBM Plex Sans** (not Space Grotesk — that's hero/campaign only)
+- Primary CTA color: `--horizon-red`
+- Chat-like panels: `--dark-maroon` background, `--ivory` text
+- Input fields: `--ivory-tint` background
+- Progress bars: `--horizon-red` fill on `--ivory-tint` background
+- Body text: IBM Plex Sans 400, 16-18px
+
+## Local Development
+
+```bash
+docker-compose up -d              # Start Postgres + Redis
+cd api && npx prisma migrate dev  # Run migrations
+cd api && npx prisma db seed      # Seed test data
+cd api && npm run dev             # Start Fastify server
+cd frontend && npm run dev        # Start Next.js
+```
+
+- API: http://localhost:3001/graphql
+- Frontend: http://localhost:3000
+- When `COGNITO_BYPASS=true`: JWT validation is skipped, mock user injected
+- When `ELEVENLABS_MOCK=true`: STT/TTS calls return canned responses
+- When `CONSENT_BYPASS=true`: consent check in `startInterview` is skipped
+
+## Current Build State
+
+*This section is updated as tasks complete.*
+
+- **Completed modules:** (none yet)
+- **In progress:** (not started)
+- **Schema version:** (no migrations yet)
+- **Infrastructure deployed:** (none yet)
+- **Known issues:** (none yet)
