@@ -1,0 +1,15 @@
+Table names from Section 4 of interview-spec-v2.md:
+
+1. tags
+2. question_tags
+3. user_tags
+4. users
+5. user_templates
+6. template_assignment_history
+7. interview_templates
+8. template_questions
+9. interviews
+10. interview_responses
+11. response_drafts
+12. user_consent_records
+13. admin_audit_log
