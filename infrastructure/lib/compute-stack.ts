@@ -20,8 +20,8 @@ export interface ComputeStackProps extends cdk.StackProps {
 
 /**
  * ComputeStack — ECS Fargate cluster, ALB with path-based routing,
- * API and Frontend services (placeholder nginx), Lambda functions
- * for cleaning and reconciliation, SQS queues, and EventBridge rules.
+ * API and Frontend services, Lambda functions for cleaning and
+ * reconciliation, SQS queues, and EventBridge rules.
  */
 export class ComputeStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
@@ -69,12 +69,27 @@ export class ComputeStack extends cdk.Stack {
     });
 
     apiTaskDef.addContainer('api', {
-      image: ecs.ContainerImage.fromRegistry('nginx:alpine'),
-      portMappings: [{ containerPort: 80 }],
+      image: ecs.ContainerImage.fromEcrRepository(props.foundationStack.apiRepo, 'latest'),
+      portMappings: [{ containerPort: 3001 }],
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'arena-api',
         logRetention: logs.RetentionDays.ONE_MONTH,
       }),
+      environment: {
+        PORT: '3001',
+        HOST: '0.0.0.0',
+        NODE_ENV: 'production',
+        OTEL_SERVICE_NAME: 'arena-api',
+        OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4317',
+        OTEL_EXPORTER_OTLP_PROTOCOL: 'grpc',
+      },
+      healthCheck: {
+        command: ['CMD-SHELL', 'wget -qO- http://localhost:3001/health || exit 1'],
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
+        startPeriod: cdk.Duration.seconds(60),
+        retries: 3,
+      },
     });
 
     this.apiService = new ecs.FargateService(this, 'ApiService', {
@@ -101,12 +116,25 @@ export class ComputeStack extends cdk.Stack {
     });
 
     frontendTaskDef.addContainer('frontend', {
-      image: ecs.ContainerImage.fromRegistry('nginx:alpine'),
-      portMappings: [{ containerPort: 80 }],
+      image: ecs.ContainerImage.fromEcrRepository(props.foundationStack.frontendRepo, 'latest'),
+      portMappings: [{ containerPort: 3001 }],
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'arena-frontend',
         logRetention: logs.RetentionDays.ONE_MONTH,
       }),
+      environment: {
+        NODE_ENV: 'production',
+        PORT: '3001',
+        HOSTNAME: '0.0.0.0',
+        NEXT_TELEMETRY_DISABLED: '1',
+      },
+      healthCheck: {
+        command: ['CMD-SHELL', 'wget -qO- http://localhost:3001/api/health || exit 1'],
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
+        startPeriod: cdk.Duration.seconds(10),
+        retries: 3,
+      },
     });
 
     this.frontendService = new ecs.FargateService(this, 'FrontendService', {
@@ -120,9 +148,14 @@ export class ComputeStack extends cdk.Stack {
     // ── ALB Path-Based Routing ────────────────────────────────────────
     // /graphql and /api/* → API service; everything else → Frontend
     listener.addTargets('ApiTargets', {
-      port: 80,
+      port: 3001,
+      protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [this.apiService],
-      healthCheck: { path: '/' },
+      healthCheck: {
+        path: '/health',
+        port: '3001',
+        healthyHttpCodes: '200',
+      },
       conditions: [
         elbv2.ListenerCondition.pathPatterns(['/graphql', '/graphql/*', '/api/*']),
       ],
@@ -130,9 +163,14 @@ export class ComputeStack extends cdk.Stack {
     });
 
     listener.addTargets('FrontendTargets', {
-      port: 80,
+      port: 3001,
+      protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [this.frontendService],
-      healthCheck: { path: '/' },
+      healthCheck: {
+        path: '/api/health',
+        port: '3001',
+        healthyHttpCodes: '200',
+      },
     });
 
     // ── SQS: Cleaning Dead-Letter Queue ──────────────────────────────

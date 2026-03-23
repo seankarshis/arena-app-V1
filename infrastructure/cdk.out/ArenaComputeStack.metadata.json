@@ -287,16 +287,16 @@
       "data": "ArenaAlbSecurityGroupB88EC4FA"
     }
   ],
-  "/ArenaComputeStack/ArenaAlb/SecurityGroup/to ArenaComputeStackApiServiceSecurityGroup27DACF9D:80": [
+  "/ArenaComputeStack/ArenaAlb/SecurityGroup/to ArenaComputeStackApiServiceSecurityGroup27DACF9D:3001": [
     {
       "type": "aws:cdk:logicalId",
-      "data": "ArenaAlbSecurityGrouptoArenaComputeStackApiServiceSecurityGroup27DACF9D805A3C5FC8"
+      "data": "ArenaAlbSecurityGrouptoArenaComputeStackApiServiceSecurityGroup27DACF9D3001CBEFB3FB"
     }
   ],
-  "/ArenaComputeStack/ArenaAlb/SecurityGroup/to ArenaComputeStackFrontendServiceSecurityGroupFCD1AACA:80": [
+  "/ArenaComputeStack/ArenaAlb/SecurityGroup/to ArenaComputeStackFrontendServiceSecurityGroupFCD1AACA:3001": [
     {
       "type": "aws:cdk:logicalId",
-      "data": "ArenaAlbSecurityGrouptoArenaComputeStackFrontendServiceSecurityGroupFCD1AACA804CA1AA50"
+      "data": "ArenaAlbSecurityGrouptoArenaComputeStackFrontendServiceSecurityGroupFCD1AACA300166472913"
     }
   ],
   "/ArenaComputeStack/ArenaAlb/HttpListener/Resource": [
@@ -323,10 +323,10 @@
       "data": "ApiServiceSecurityGroupA2426F91"
     }
   ],
-  "/ArenaComputeStack/ApiService/SecurityGroup/from ArenaComputeStackArenaAlbSecurityGroup3192CB85:80": [
+  "/ArenaComputeStack/ApiService/SecurityGroup/from ArenaComputeStackArenaAlbSecurityGroup3192CB85:3001": [
     {
       "type": "aws:cdk:logicalId",
-      "data": "ApiServiceSecurityGroupfromArenaComputeStackArenaAlbSecurityGroup3192CB85800935AF30"
+      "data": "ApiServiceSecurityGroupfromArenaComputeStackArenaAlbSecurityGroup3192CB853001BB0BEBFE"
     }
   ],
   "/ArenaComputeStack/FrontendTaskDef/TaskRole/Resource": [
@@ -347,10 +347,10 @@
       "data": "FrontendServiceSecurityGroup85470DEC"
     }
   ],
-  "/ArenaComputeStack/FrontendService/SecurityGroup/from ArenaComputeStackArenaAlbSecurityGroup3192CB85:80": [
+  "/ArenaComputeStack/FrontendService/SecurityGroup/from ArenaComputeStackArenaAlbSecurityGroup3192CB85:3001": [
     {
       "type": "aws:cdk:logicalId",
-      "data": "FrontendServiceSecurityGroupfromArenaComputeStackArenaAlbSecurityGroup3192CB858054BBE1E6"
+      "data": "FrontendServiceSecurityGroupfromArenaComputeStackArenaAlbSecurityGroup3192CB853001BA4801A9"
     }
   ],
   "/ArenaComputeStack/CleaningQueue/Policy/Resource": [

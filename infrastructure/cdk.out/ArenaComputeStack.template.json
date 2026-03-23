@@ -575,7 +575,7 @@
     "aws:cdk:path": "ArenaComputeStack/ArenaAlb/SecurityGroup/Resource"
    }
   },
-  "ArenaAlbSecurityGrouptoArenaComputeStackApiServiceSecurityGroup27DACF9D805A3C5FC8": {
+  "ArenaAlbSecurityGrouptoArenaComputeStackApiServiceSecurityGroup27DACF9D3001CBEFB3FB": {
    "Type": "AWS::EC2::SecurityGroupEgress",
    "Properties": {
     "Description": "Load balancer to target",
@@ -585,7 +585,7 @@
       "GroupId"
      ]
     },
-    "FromPort": 80,
+    "FromPort": 3001,
     "GroupId": {
      "Fn::GetAtt": [
       "ArenaAlbSecurityGroupB88EC4FA",
@@ -593,13 +593,13 @@
      ]
     },
     "IpProtocol": "tcp",
-    "ToPort": 80
+    "ToPort": 3001
    },
    "Metadata": {
-    "aws:cdk:path": "ArenaComputeStack/ArenaAlb/SecurityGroup/to ArenaComputeStackApiServiceSecurityGroup27DACF9D:80"
+    "aws:cdk:path": "ArenaComputeStack/ArenaAlb/SecurityGroup/to ArenaComputeStackApiServiceSecurityGroup27DACF9D:3001"
    }
   },
-  "ArenaAlbSecurityGrouptoArenaComputeStackFrontendServiceSecurityGroupFCD1AACA804CA1AA50": {
+  "ArenaAlbSecurityGrouptoArenaComputeStackFrontendServiceSecurityGroupFCD1AACA300166472913": {
    "Type": "AWS::EC2::SecurityGroupEgress",
    "Properties": {
     "Description": "Load balancer to target",
@@ -609,7 +609,7 @@
       "GroupId"
      ]
     },
-    "FromPort": 80,
+    "FromPort": 3001,
     "GroupId": {
      "Fn::GetAtt": [
       "ArenaAlbSecurityGroupB88EC4FA",
@@ -617,10 +617,10 @@
      ]
     },
     "IpProtocol": "tcp",
-    "ToPort": 80
+    "ToPort": 3001
    },
    "Metadata": {
-    "aws:cdk:path": "ArenaComputeStack/ArenaAlb/SecurityGroup/to ArenaComputeStackFrontendServiceSecurityGroupFCD1AACA:80"
+    "aws:cdk:path": "ArenaComputeStack/ArenaAlb/SecurityGroup/to ArenaComputeStackFrontendServiceSecurityGroupFCD1AACA:3001"
    }
   },
   "ArenaAlbHttpListenerE282A924": {
@@ -647,8 +647,12 @@
   "ArenaAlbHttpListenerApiTargetsGroupABA272BF": {
    "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
    "Properties": {
-    "HealthCheckPath": "/",
-    "Port": 80,
+    "HealthCheckPath": "/health",
+    "HealthCheckPort": "3001",
+    "Matcher": {
+     "HttpCode": "200"
+    },
+    "Port": 3001,
     "Protocol": "HTTP",
     "TargetGroupAttributes": [
      {
@@ -700,8 +704,12 @@
   "ArenaAlbHttpListenerFrontendTargetsGroup775BB8E1": {
    "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
    "Properties": {
-    "HealthCheckPath": "/",
-    "Port": 80,
+    "HealthCheckPath": "/api/health",
+    "HealthCheckPort": "3001",
+    "Matcher": {
+     "HttpCode": "200"
+    },
+    "Port": 3001,
     "Protocol": "HTTP",
     "TargetGroupAttributes": [
      {
@@ -743,8 +751,86 @@
    "Properties": {
     "ContainerDefinitions": [
      {
+      "Environment": [
+       {
+        "Name": "PORT",
+        "Value": "3001"
+       },
+       {
+        "Name": "HOST",
+        "Value": "0.0.0.0"
+       },
+       {
+        "Name": "NODE_ENV",
+        "Value": "production"
+       },
+       {
+        "Name": "OTEL_SERVICE_NAME",
+        "Value": "arena-api"
+       },
+       {
+        "Name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "Value": "http://localhost:4317"
+       },
+       {
+        "Name": "OTEL_EXPORTER_OTLP_PROTOCOL",
+        "Value": "grpc"
+       }
+      ],
       "Essential": true,
-      "Image": "nginx:alpine",
+      "HealthCheck": {
+       "Command": [
+        "CMD-SHELL",
+        "wget -qO- http://localhost:3001/health || exit 1"
+       ],
+       "Interval": 30,
+       "Retries": 3,
+       "StartPeriod": 60,
+       "Timeout": 5
+      },
+      "Image": {
+       "Fn::Join": [
+        "",
+        [
+         {
+          "Fn::Select": [
+           4,
+           {
+            "Fn::Split": [
+             ":",
+             {
+              "Fn::ImportValue": "ArenaFoundationStack:ExportsOutputFnGetAttApiRepoEFA7BA97ArnACFF43BA"
+             }
+            ]
+           }
+          ]
+         },
+         ".dkr.ecr.",
+         {
+          "Fn::Select": [
+           3,
+           {
+            "Fn::Split": [
+             ":",
+             {
+              "Fn::ImportValue": "ArenaFoundationStack:ExportsOutputFnGetAttApiRepoEFA7BA97ArnACFF43BA"
+             }
+            ]
+           }
+          ]
+         },
+         ".",
+         {
+          "Ref": "AWS::URLSuffix"
+         },
+         "/",
+         {
+          "Fn::ImportValue": "ArenaFoundationStack:ExportsOutputRefApiRepoEFA7BA97FC7F6607"
+         },
+         ":latest"
+        ]
+       ]
+      },
       "LogConfiguration": {
        "LogDriver": "awslogs",
        "Options": {
@@ -758,7 +844,7 @@
       "Name": "api",
       "PortMappings": [
        {
-        "ContainerPort": 80,
+        "ContainerPort": 3001,
         "Protocol": "tcp"
        }
       ]
@@ -826,6 +912,22 @@
      "Statement": [
       {
        "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "ArenaFoundationStack:ExportsOutputFnGetAttApiRepoEFA7BA97ArnACFF43BA"
+       }
+      },
+      {
+       "Action": "ecr:GetAuthorizationToken",
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
         "logs:CreateLogStream",
         "logs:PutLogEvents"
        ],
@@ -873,7 +975,7 @@
     "LoadBalancers": [
      {
       "ContainerName": "api",
-      "ContainerPort": 80,
+      "ContainerPort": 3001,
       "TargetGroupArn": {
        "Ref": "ArenaAlbHttpListenerApiTargetsGroupABA272BF"
       }
@@ -934,11 +1036,11 @@
     "aws:cdk:path": "ArenaComputeStack/ApiService/SecurityGroup/Resource"
    }
   },
-  "ApiServiceSecurityGroupfromArenaComputeStackArenaAlbSecurityGroup3192CB85800935AF30": {
+  "ApiServiceSecurityGroupfromArenaComputeStackArenaAlbSecurityGroup3192CB853001BB0BEBFE": {
    "Type": "AWS::EC2::SecurityGroupIngress",
    "Properties": {
     "Description": "Load balancer to target",
-    "FromPort": 80,
+    "FromPort": 3001,
     "GroupId": {
      "Fn::GetAtt": [
       "ApiServiceSecurityGroupA2426F91",
@@ -952,13 +1054,13 @@
       "GroupId"
      ]
     },
-    "ToPort": 80
+    "ToPort": 3001
    },
    "DependsOn": [
     "ApiTaskDefTaskRole76FB19FA"
    ],
    "Metadata": {
-    "aws:cdk:path": "ArenaComputeStack/ApiService/SecurityGroup/from ArenaComputeStackArenaAlbSecurityGroup3192CB85:80"
+    "aws:cdk:path": "ArenaComputeStack/ApiService/SecurityGroup/from ArenaComputeStackArenaAlbSecurityGroup3192CB85:3001"
    }
   },
   "ApiServiceTaskCountTargetBFC64025": {
@@ -1042,8 +1144,78 @@
    "Properties": {
     "ContainerDefinitions": [
      {
+      "Environment": [
+       {
+        "Name": "NODE_ENV",
+        "Value": "production"
+       },
+       {
+        "Name": "PORT",
+        "Value": "3001"
+       },
+       {
+        "Name": "HOSTNAME",
+        "Value": "0.0.0.0"
+       },
+       {
+        "Name": "NEXT_TELEMETRY_DISABLED",
+        "Value": "1"
+       }
+      ],
       "Essential": true,
-      "Image": "nginx:alpine",
+      "HealthCheck": {
+       "Command": [
+        "CMD-SHELL",
+        "wget -qO- http://localhost:3001/api/health || exit 1"
+       ],
+       "Interval": 30,
+       "Retries": 3,
+       "StartPeriod": 10,
+       "Timeout": 5
+      },
+      "Image": {
+       "Fn::Join": [
+        "",
+        [
+         {
+          "Fn::Select": [
+           4,
+           {
+            "Fn::Split": [
+             ":",
+             {
+              "Fn::ImportValue": "ArenaFoundationStack:ExportsOutputFnGetAttFrontendRepoF80FCC01ArnD7253E0D"
+             }
+            ]
+           }
+          ]
+         },
+         ".dkr.ecr.",
+         {
+          "Fn::Select": [
+           3,
+           {
+            "Fn::Split": [
+             ":",
+             {
+              "Fn::ImportValue": "ArenaFoundationStack:ExportsOutputFnGetAttFrontendRepoF80FCC01ArnD7253E0D"
+             }
+            ]
+           }
+          ]
+         },
+         ".",
+         {
+          "Ref": "AWS::URLSuffix"
+         },
+         "/",
+         {
+          "Fn::ImportValue": "ArenaFoundationStack:ExportsOutputRefFrontendRepoF80FCC01D2E9C93A"
+         },
+         ":latest"
+        ]
+       ]
+      },
       "LogConfiguration": {
        "LogDriver": "awslogs",
        "Options": {
@@ -1057,7 +1229,7 @@
       "Name": "frontend",
       "PortMappings": [
        {
-        "ContainerPort": 80,
+        "ContainerPort": 3001,
         "Protocol": "tcp"
        }
       ]
@@ -1125,6 +1297,22 @@
      "Statement": [
       {
        "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+       ],
+       "Effect": "Allow",
+       "Resource": {
+        "Fn::ImportValue": "ArenaFoundationStack:ExportsOutputFnGetAttFrontendRepoF80FCC01ArnD7253E0D"
+       }
+      },
+      {
+       "Action": "ecr:GetAuthorizationToken",
+       "Effect": "Allow",
+       "Resource": "*"
+      },
+      {
+       "Action": [
         "logs:CreateLogStream",
         "logs:PutLogEvents"
        ],
@@ -1172,7 +1360,7 @@
     "LoadBalancers": [
      {
       "ContainerName": "frontend",
-      "ContainerPort": 80,
+      "ContainerPort": 3001,
       "TargetGroupArn": {
        "Ref": "ArenaAlbHttpListenerFrontendTargetsGroup775BB8E1"
       }
@@ -1236,11 +1424,11 @@
     "aws:cdk:path": "ArenaComputeStack/FrontendService/SecurityGroup/Resource"
    }
   },
-  "FrontendServiceSecurityGroupfromArenaComputeStackArenaAlbSecurityGroup3192CB858054BBE1E6": {
+  "FrontendServiceSecurityGroupfromArenaComputeStackArenaAlbSecurityGroup3192CB853001BA4801A9": {
    "Type": "AWS::EC2::SecurityGroupIngress",
    "Properties": {
     "Description": "Load balancer to target",
-    "FromPort": 80,
+    "FromPort": 3001,
     "GroupId": {
      "Fn::GetAtt": [
       "FrontendServiceSecurityGroup85470DEC",
@@ -1254,13 +1442,13 @@
       "GroupId"
      ]
     },
-    "ToPort": 80
+    "ToPort": 3001
    },
    "DependsOn": [
     "FrontendTaskDefTaskRoleDA0FD037"
    ],
    "Metadata": {
-    "aws:cdk:path": "ArenaComputeStack/FrontendService/SecurityGroup/from ArenaComputeStackArenaAlbSecurityGroup3192CB85:80"
+    "aws:cdk:path": "ArenaComputeStack/FrontendService/SecurityGroup/from ArenaComputeStackArenaAlbSecurityGroup3192CB85:3001"
    }
   },
   "CleaningDlq1602D6AB": {
@@ -1427,7 +1615,7 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-776735194544-us-east-2",
-     "S3Key": "598ea5c5e79c1bd9da988c4d29ee83de0e2e961f293132f132e6585e42c5243f.zip"
+     "S3Key": "bc6d19df65220eaaa9d748ce8ac79953a2b82e373d7fae43234b723eb1457897.zip"
     },
     "FunctionName": "arena-cleaning",
     "Handler": "cleaning-handler.handler",
@@ -1452,7 +1640,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "ArenaComputeStack/CleaningLambda/Resource",
-    "aws:asset:path": "asset.598ea5c5e79c1bd9da988c4d29ee83de0e2e961f293132f132e6585e42c5243f",
+    "aws:asset:path": "asset.bc6d19df65220eaaa9d748ce8ac79953a2b82e373d7fae43234b723eb1457897",
     "aws:asset:is-bundled": false,
     "aws:asset:property": "Code"
    }
@@ -1555,7 +1743,7 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-776735194544-us-east-2",
-     "S3Key": "598ea5c5e79c1bd9da988c4d29ee83de0e2e961f293132f132e6585e42c5243f.zip"
+     "S3Key": "bc6d19df65220eaaa9d748ce8ac79953a2b82e373d7fae43234b723eb1457897.zip"
     },
     "FunctionName": "arena-reconciliation",
     "Handler": "reconciliation-handler.handler",
@@ -1579,7 +1767,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "ArenaComputeStack/ReconciliationLambda/Resource",
-    "aws:asset:path": "asset.598ea5c5e79c1bd9da988c4d29ee83de0e2e961f293132f132e6585e42c5243f",
+    "aws:asset:path": "asset.bc6d19df65220eaaa9d748ce8ac79953a2b82e373d7fae43234b723eb1457897",
     "aws:asset:is-bundled": false,
     "aws:asset:property": "Code"
    }
