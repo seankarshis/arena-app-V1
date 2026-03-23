@@ -48,6 +48,8 @@ export interface InterviewSession {
   /** Idle prompt text delivered by the backend during inactivity. */
   idlePrompt: string | null;
   errorMessage: string | null;
+  /** Set when startInterview succeeds; used for session duration display. */
+  startedAt: Date | null;
 }
 
 export interface InterviewActions {
@@ -144,6 +146,8 @@ const SSE_ENABLED_STATES: ReadonlySet<InterviewState> = new Set([
   'SKIPPING',
   'IDLE_WARNING',
   'RESUMING',
+  // Keep SSE open during COMPLETING so a submitted final thought can stream a response
+  'COMPLETING',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -166,6 +170,7 @@ export function useInterviewState(templateId: string): {
     progressPercent: 0,
     idlePrompt: null,
     errorMessage: null,
+    startedAt: null,
   });
 
   // Refs for reading current values inside callbacks without stale closures
@@ -294,8 +299,8 @@ export function useInterviewState(templateId: string): {
       const result = await startInterviewMutation({ variables: { templateId } });
       const interviewId = result.data?.startInterview.interviewId;
       if (!interviewId) throw new Error('No interview ID returned from server');
-      // Set interviewId first — SSE enabled check reads it
-      setSession((prev) => ({ ...prev, interviewId }));
+      // Set interviewId and startedAt first — SSE enabled check reads interviewId
+      setSession((prev) => ({ ...prev, interviewId, startedAt: new Date() }));
       // LLM_STREAMING enables SSE; backend streams the first question immediately
       setMachineState('LLM_STREAMING');
     } catch (err) {
