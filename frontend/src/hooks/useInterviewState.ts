@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, gql } from '@apollo/client';
 import { useSSE, type SSEMessage } from './useSSE';
 import { usePTT } from './usePTT';
+import { audioUploadQueue } from '@/lib/audioUploadQueue';
 
 // ---------------------------------------------------------------------------
 // State machine states
@@ -66,6 +67,10 @@ export interface InterviewSession {
   nearingTimeLimit: boolean;
   /** Non-null when microphone access fails; drives PTT disabled state. */
   microphoneError: string | null;
+  /** Number of audio uploads currently in progress or queued. Used for UPLOADING progress indicator. */
+  pendingUploadsCount: number;
+  /** True if audio uploads were still pending when the 60 s UPLOADING timeout was reached. */
+  uploadsPendingOnTimeout: boolean;
 }
 
 export interface InterviewActions {
@@ -187,6 +192,14 @@ interface StartInterviewResult {
   startInterview: { interviewId: string };
 }
 
+interface SubmitResponseResult {
+  submitResponse: { responseId: string };
+}
+
+interface SaveDraftResult {
+  saveDraft: { draftId: string };
+}
+
 // ---------------------------------------------------------------------------
 // SSE states where the connection must be open
 // ---------------------------------------------------------------------------
@@ -232,6 +245,8 @@ export function useInterviewState(templateId: string): {
     audioBlob: null,
     nearingTimeLimit: false,
     microphoneError: null,
+    pendingUploadsCount: 0,
+    uploadsPendingOnTimeout: false,
   });
 
   // Refs for reading current values inside callbacks without stale closures
@@ -255,6 +270,10 @@ export function useInterviewState(templateId: string): {
   // pendingInputMode tracks what inputMode to use when auto-send fires
   const pendingInputModeRef = useRef<'voice' | 'edited' | 'text'>('voice');
 
+  // Recording duration tracking — set on pressPTT, computed on releasePTT
+  const recordingStartTimeRef = useRef<number | null>(null);
+  const recordingDurationRef = useRef<number>(0);
+
   // ---------------------------------------------------------------------------
   // Mutations
   // ---------------------------------------------------------------------------
@@ -265,7 +284,7 @@ export function useInterviewState(templateId: string): {
   >(START_INTERVIEW);
 
   const [submitResponseMutation] = useMutation<
-    unknown,
+    SubmitResponseResult,
     { interviewId: string; rawTranscription: string; inputMode: string }
   >(SUBMIT_RESPONSE);
 
@@ -287,7 +306,7 @@ export function useInterviewState(templateId: string): {
   >(COMPLETE_INTERVIEW);
 
   const [saveDraftMutation] = useMutation<
-    unknown,
+    SaveDraftResult,
     { interviewId: string; transcript: string; inputMode: string }
   >(SAVE_DRAFT);
 
@@ -393,6 +412,13 @@ export function useInterviewState(templateId: string): {
     setSession((prev) => ({ ...prev, microphoneError: ptt.microphoneError }));
   }, [ptt.microphoneError]);
 
+  // Sync audioUploadQueue pending count into session for UI progress display
+  useEffect(() => {
+    return audioUploadQueue.subscribe((count) => {
+      setSession((prev) => ({ ...prev, pendingUploadsCount: count }));
+    });
+  }, []);
+
   // When final_transcript arrives from STT, sync to session and start auto-send
   // (auto-send only starts if we're in REVIEW state when the transcript arrives)
   useEffect(() => {
@@ -427,6 +453,8 @@ export function useInterviewState(templateId: string): {
 
       const transcript = sess.finalTranscript ?? '';
       const inputMode = pendingInputModeRef.current;
+      const audioBlob = sess.audioBlob;
+      const durationSeconds = recordingDurationRef.current;
 
       setSession((prev) => ({
         ...prev,
@@ -443,6 +471,17 @@ export function useInterviewState(templateId: string): {
 
       submitResponseMutationRef.current({
         variables: { interviewId: sess.interviewId, rawTranscription: transcript, inputMode },
+      }).then((result) => {
+        const responseId = result.data?.submitResponse.responseId;
+        if (audioBlob && responseId && inputMode === 'voice') {
+          audioUploadQueue.enqueueResponseUpload(
+            sess.interviewId,
+            responseId,
+            audioBlob,
+            audioBlob.type || 'audio/webm',
+            durationSeconds,
+          );
+        }
       }).catch((err: unknown) => {
         const errorMessage = err instanceof Error ? err.message : 'Failed to submit response';
         setSession((prev) => ({ ...prev, errorMessage }));
@@ -618,7 +657,12 @@ export function useInterviewState(templateId: string): {
       await completeInterviewMutation({
         variables: { interviewId: currentSession.interviewId },
       });
-      // In text-only mode there are no pending audio uploads; transition immediately
+      // Wait up to 60 s for any in-flight audio uploads to finish
+      const allUploaded = await audioUploadQueue.waitForEmpty(60_000);
+      if (!allUploaded) {
+        // Timeout — uploads continue in background; surface a note in session
+        setSession((prev) => ({ ...prev, uploadsPendingOnTimeout: true }));
+      }
       setMachineState('COMPLETED');
     } catch (err) {
       const errorMessage =
@@ -665,6 +709,7 @@ export function useInterviewState(templateId: string): {
     }
 
     pendingInputModeRef.current = 'voice';
+    recordingStartTimeRef.current = Date.now();
     setMachineState('RECORDING');
 
     const started = await ptt.start(currentSession.interviewId);
@@ -676,6 +721,10 @@ export function useInterviewState(templateId: string): {
 
   const releasePTT = useCallback(() => {
     if (machineStateRef.current !== 'RECORDING') return;
+    if (recordingStartTimeRef.current !== null) {
+      recordingDurationRef.current = (Date.now() - recordingStartTimeRef.current) / 1000;
+      recordingStartTimeRef.current = null;
+    }
     ptt.stop();
     // Enter REVIEW immediately; auto-send timer starts when finalTranscript arrives
     setMachineState('REVIEW');
@@ -689,6 +738,8 @@ export function useInterviewState(templateId: string): {
 
     const transcript = sess.finalTranscript ?? '';
     const inputMode = pendingInputModeRef.current;
+    const audioBlob = sess.audioBlob;
+    const durationSeconds = recordingDurationRef.current;
 
     setSession((prev) => ({
       ...prev,
@@ -704,13 +755,23 @@ export function useInterviewState(templateId: string): {
     setMachineState('PROCESSING');
 
     try {
-      await submitResponseMutation({
+      const result = await submitResponseMutation({
         variables: {
           interviewId: sess.interviewId,
           rawTranscription: transcript,
           inputMode,
         },
       });
+      const responseId = result.data?.submitResponse.responseId;
+      if (audioBlob && responseId && inputMode === 'voice') {
+        audioUploadQueue.enqueueResponseUpload(
+          sess.interviewId,
+          responseId,
+          audioBlob,
+          audioBlob.type || 'audio/webm',
+          durationSeconds,
+        );
+      }
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Failed to submit response';
@@ -742,16 +803,29 @@ export function useInterviewState(templateId: string): {
 
     clearAutoSend();
     const transcript = currentSession.finalTranscript ?? '';
+    const audioBlob = currentSession.audioBlob;
+    const durationSeconds = recordingDurationRef.current;
 
     setMachineState('REDO');
 
-    // Save draft to DB (non-blocking — REDO proceeds even if this fails)
+    // Save draft to DB and queue audio upload (non-blocking — REDO proceeds even if this fails)
     saveDraftMutation({
       variables: {
         interviewId: currentSession.interviewId,
         transcript,
         inputMode: pendingInputModeRef.current,
       },
+    }).then((result) => {
+      const draftId = result.data?.saveDraft.draftId;
+      if (audioBlob && draftId) {
+        audioUploadQueue.enqueueDraftUpload(
+          currentSession.interviewId,
+          draftId,
+          audioBlob,
+          audioBlob.type || 'audio/webm',
+          durationSeconds,
+        );
+      }
     }).catch(() => { /* draft save failure is non-fatal */ });
 
     // Reset PTT state so the next press starts fresh
