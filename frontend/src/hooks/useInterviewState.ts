@@ -5,6 +5,9 @@ import { useMutation, gql } from '@apollo/client';
 import { useSSE, type SSEMessage } from './useSSE';
 import { usePTT } from './usePTT';
 import { audioUploadQueue } from '@/lib/audioUploadQueue';
+import { getIdToken } from '@/lib/auth';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 // ---------------------------------------------------------------------------
 // State machine states
@@ -71,6 +74,13 @@ export interface InterviewSession {
   pendingUploadsCount: number;
   /** True if audio uploads were still pending when the 60 s UPLOADING timeout was reached. */
   uploadsPendingOnTimeout: boolean;
+  // ---- Error recovery fields ----
+  /** True when the browser reports offline status. */
+  isOffline: boolean;
+  /** Number of LLM stream retries attempted for the current question. */
+  llmRetryCount: number;
+  /** True when the SSE connection is attempting to reconnect. */
+  isReconnecting: boolean;
 }
 
 export interface InterviewActions {
@@ -103,6 +113,8 @@ export interface InterviewActions {
   onTranscriptFocus: () => void;
   /** Call when transcript text field loses focus (restarts auto-send timer). */
   onTranscriptBlur: () => void;
+  /** Retry the LLM stream after a retryable error (up to 3 attempts, then auto-pauses). */
+  retryLLM: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +231,22 @@ const SSE_ENABLED_STATES: ReadonlySet<InterviewState> = new Set([
   'COMPLETING',
 ]);
 
+// States where the interview is active and should be preserved on navigation
+const ACTIVE_INTERVIEW_STATES: ReadonlySet<InterviewState> = new Set([
+  'AWAITING_INPUT',
+  'IDLE_WARNING',
+  'RECORDING',
+  'REVIEW',
+  'REDO',
+  'PROCESSING',
+  'LLM_STREAMING',
+  'SKIPPING',
+  'MEDIA_ERROR',
+  'COMPLETING',
+  'STARTING',
+  'RESUMING',
+]);
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -247,6 +275,9 @@ export function useInterviewState(templateId: string): {
     microphoneError: null,
     pendingUploadsCount: 0,
     uploadsPendingOnTimeout: false,
+    isOffline: false,
+    llmRetryCount: 0,
+    isReconnecting: false,
   });
 
   // Refs for reading current values inside callbacks without stale closures
@@ -273,6 +304,15 @@ export function useInterviewState(templateId: string): {
   // Recording duration tracking — set on pressPTT, computed on releasePTT
   const recordingStartTimeRef = useRef<number | null>(null);
   const recordingDurationRef = useRef<number>(0);
+
+  // LLM retry counter ref (avoids stale closure in SSE callback)
+  const llmRetryCountRef = useRef(0);
+
+  // Cached auth token for best-effort beforeunload pause
+  const cachedTokenRef = useRef<string | null>(null);
+
+  // Guard against rapid duplicate user actions
+  const actionInFlightRef = useRef(false);
 
   // ---------------------------------------------------------------------------
   // Mutations
@@ -314,6 +354,9 @@ export function useInterviewState(templateId: string): {
   const submitResponseMutationRef = useRef(submitResponseMutation);
   useEffect(() => { submitResponseMutationRef.current = submitResponseMutation; }, [submitResponseMutation]);
 
+  const pauseInterviewMutationRef = useRef(pauseInterviewMutation);
+  useEffect(() => { pauseInterviewMutationRef.current = pauseInterviewMutation; }, [pauseInterviewMutation]);
+
   // ---------------------------------------------------------------------------
   // SSE message handler
   // ---------------------------------------------------------------------------
@@ -334,6 +377,7 @@ export function useInterviewState(templateId: string): {
         break;
 
       case 'stream_complete':
+        llmRetryCountRef.current = 0;
         if (msg.interviewComplete) {
           // LLM-initiated completion: show closing message, let user decide
           setSession((prev) => ({
@@ -341,6 +385,7 @@ export function useInterviewState(templateId: string): {
             streamingText: '',
             currentQuestion: msg.fullResponse,
             progressPercent: msg.progressPercent,
+            llmRetryCount: 0,
           }));
           setMachineState('COMPLETING');
         } else {
@@ -352,6 +397,7 @@ export function useInterviewState(templateId: string): {
             currentQuestionId: msg.questionId,
             progressPercent: msg.progressPercent,
             idlePrompt: null,
+            llmRetryCount: 0,
           }));
           setMachineState('AWAITING_INPUT');
         }
@@ -367,8 +413,41 @@ export function useInterviewState(templateId: string): {
         break;
 
       case 'error':
-        setSession((prev) => ({ ...prev, errorMessage: msg.message }));
-        setMachineState('ERROR');
+        if (msg.retryable) {
+          // LLM stream error — track retries; auto-pause after 3
+          const newCount = llmRetryCountRef.current + 1;
+          llmRetryCountRef.current = newCount;
+          if (newCount >= 3) {
+            setSession((prev) => ({
+              ...prev,
+              errorMessage:
+                "We're experiencing technical difficulties. Your interview has been saved — you can resume later.",
+              llmRetryCount: newCount,
+            }));
+            setMachineState('PAUSED');
+            // Best-effort pause mutation
+            const id = sessionRef.current.interviewId;
+            if (id) {
+              pauseInterviewMutationRef.current({
+                variables: { interviewId: id },
+              }).catch(() => {});
+            }
+          } else {
+            setSession((prev) => ({
+              ...prev,
+              errorMessage: msg.message,
+              llmRetryCount: newCount,
+            }));
+            setMachineState('ERROR');
+          }
+        } else {
+          setSession((prev) => ({
+            ...prev,
+            errorMessage: msg.message,
+            llmRetryCount: 0,
+          }));
+          setMachineState('ERROR');
+        }
         break;
 
       default:
@@ -381,13 +460,24 @@ export function useInterviewState(templateId: string): {
       ...prev,
       errorMessage:
         'Connection lost after multiple retries. Please refresh and try again.',
+      isReconnecting: false,
     }));
     setMachineState('ERROR');
+  }, []);
+
+  const handleSSEReconnecting = useCallback(() => {
+    setSession((prev) => ({ ...prev, isReconnecting: true }));
+  }, []);
+
+  const handleSSEConnected = useCallback(() => {
+    setSession((prev) => ({ ...prev, isReconnecting: false }));
   }, []);
 
   useSSE({
     interviewId: session.interviewId || null,
     onMessage: handleSSEMessage,
+    onConnected: handleSSEConnected,
+    onReconnecting: handleSSEReconnecting,
     onError: handleSSEError,
     enabled: !!session.interviewId && SSE_ENABLED_STATES.has(machineState),
   });
@@ -429,6 +519,121 @@ export function useInterviewState(templateId: string): {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ptt.finalTranscript]);
+
+  // ---------------------------------------------------------------------------
+  // Error recovery & edge case effects
+  // ---------------------------------------------------------------------------
+
+  // Cache auth token for best-effort beforeunload pause
+  useEffect(() => {
+    if (!session.interviewId) return;
+    const refresh = () => {
+      getIdToken()
+        .then((t) => { cachedTokenRef.current = t; })
+        .catch(() => {});
+    };
+    refresh();
+    const interval = setInterval(refresh, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [session.interviewId]);
+
+  // beforeunload: best-effort pause on tab close / navigation away
+  useEffect(() => {
+    if (!session.interviewId) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const state = machineStateRef.current;
+      if (!ACTIVE_INTERVIEW_STATES.has(state)) return;
+      const id = sessionRef.current.interviewId;
+      if (!id) return;
+
+      // Best-effort pause via fetch keepalive (auth may fail — backend heartbeat is fallback)
+      const token = cachedTokenRef.current;
+      const body = JSON.stringify({
+        query:
+          'mutation PauseInterview($id: ID!) { pauseInterview(interviewId: $id) { id } }',
+        variables: { id },
+      });
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      try {
+        fetch(`${API_BASE}/graphql`, {
+          method: 'POST',
+          headers,
+          body,
+          keepalive: true,
+        });
+      } catch {
+        // best effort — backend heartbeat timeout will auto-pause
+      }
+
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [session.interviewId]);
+
+  // Network online/offline detection
+  useEffect(() => {
+    if (!session.interviewId) return;
+
+    const handleOffline = () => {
+      setSession((prev) => ({ ...prev, isOffline: true }));
+    };
+    const handleOnline = () => {
+      setSession((prev) => ({ ...prev, isOffline: false }));
+      // SSE will auto-reconnect via the enabled flag when the connection returns
+    };
+
+    // Check initial state
+    if (!navigator.onLine) {
+      setSession((prev) => ({ ...prev, isOffline: true }));
+    }
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [session.interviewId]);
+
+  // Tab visibility change: refresh online status when tab becomes visible
+  useEffect(() => {
+    if (!session.interviewId) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Browser may not fire online/offline events while tab is hidden
+        setSession((prev) => ({ ...prev, isOffline: !navigator.onLine }));
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () =>
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [session.interviewId]);
+
+  // Browser back/forward: prevent accidental navigation during active interview
+  useEffect(() => {
+    if (!session.interviewId) return;
+
+    window.history.pushState({ arena: 'interview' }, '');
+
+    const handlePopState = () => {
+      if (ACTIVE_INTERVIEW_STATES.has(machineStateRef.current)) {
+        // Re-push to prevent navigation; user must use End Interview or close tab
+        window.history.pushState({ arena: 'interview' }, '');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [session.interviewId]);
 
   // ---------------------------------------------------------------------------
   // Auto-send helpers (stable — only use refs and React setters)
@@ -496,6 +701,8 @@ export function useInterviewState(templateId: string): {
 
   const startInterview = useCallback(async () => {
     if (machineStateRef.current !== 'READY') return;
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
     setMachineState('STARTING');
     try {
       const result = await startInterviewMutation({ variables: { templateId } });
@@ -514,6 +721,8 @@ export function useInterviewState(templateId: string): {
         err instanceof Error ? err.message : 'Failed to start interview';
       setSession((prev) => ({ ...prev, errorMessage }));
       setMachineState('ERROR');
+    } finally {
+      actionInFlightRef.current = false;
     }
   }, [templateId, startInterviewMutation, ptt]);
 
@@ -528,6 +737,8 @@ export function useInterviewState(templateId: string): {
       )
         return;
       if (!currentSession.interviewId) return;
+      if (actionInFlightRef.current) return;
+      actionInFlightRef.current = true;
 
       // Add completed turn to transcript immediately for optimistic UI
       setSession((prev) => ({
@@ -559,6 +770,8 @@ export function useInterviewState(templateId: string): {
           err instanceof Error ? err.message : 'Failed to submit response';
         setSession((prev) => ({ ...prev, errorMessage }));
         setMachineState('ERROR');
+      } finally {
+        actionInFlightRef.current = false;
       }
     },
     [submitResponseMutation]
@@ -569,6 +782,8 @@ export function useInterviewState(templateId: string): {
     const currentSession = sessionRef.current;
     if (state !== 'AWAITING_INPUT' && state !== 'IDLE_WARNING') return;
     if (!currentSession.interviewId) return;
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
 
     setSession((prev) => ({
       ...prev,
@@ -593,6 +808,8 @@ export function useInterviewState(templateId: string): {
         err instanceof Error ? err.message : 'Failed to skip question';
       setSession((prev) => ({ ...prev, errorMessage }));
       setMachineState('ERROR');
+    } finally {
+      actionInFlightRef.current = false;
     }
   }, [skipQuestionMutation]);
 
@@ -649,6 +866,8 @@ export function useInterviewState(templateId: string): {
     )
       return;
     if (!currentSession.interviewId) return;
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
 
     // Skip COMPLETING UI for user-initiated end; go straight to UPLOADING spinner
     setMachineState('UPLOADING');
@@ -669,6 +888,8 @@ export function useInterviewState(templateId: string): {
         err instanceof Error ? err.message : 'Failed to complete interview';
       setSession((prev) => ({ ...prev, errorMessage }));
       setMachineState('ERROR');
+    } finally {
+      actionInFlightRef.current = false;
     }
   }, [completeInterviewMutation]);
 
@@ -863,6 +1084,13 @@ export function useInterviewState(templateId: string): {
     }
   }, [startAutoSend]);
 
+  const retryLLM = useCallback(() => {
+    if (machineStateRef.current !== 'ERROR') return;
+    // Clear error and return to PROCESSING — SSE reconnects and backend retries the LLM call
+    setSession((prev) => ({ ...prev, errorMessage: null }));
+    setMachineState('PROCESSING');
+  }, []);
+
   return {
     state: machineState,
     session,
@@ -883,6 +1111,7 @@ export function useInterviewState(templateId: string): {
       retryMicrophone,
       onTranscriptFocus,
       onTranscriptBlur,
+      retryLLM,
     },
   };
 }

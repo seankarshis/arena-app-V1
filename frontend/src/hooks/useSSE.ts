@@ -24,6 +24,7 @@ interface UseSSEOptions {
   interviewId: string | null;
   onMessage: (msg: SSEMessage) => void;
   onConnected?: () => void;
+  onReconnecting?: (attempt: number) => void;
   onError?: () => void;
   enabled: boolean;
 }
@@ -35,15 +36,18 @@ export function useSSE({
   interviewId,
   onMessage,
   onConnected,
+  onReconnecting,
   onError,
   enabled,
 }: UseSSEOptions): void {
   // Keep callbacks in refs so they never cause the effect to re-run
   const onMessageRef = useRef(onMessage);
   const onConnectedRef = useRef(onConnected);
+  const onReconnectingRef = useRef(onReconnecting);
   const onErrorRef = useRef(onError);
   onMessageRef.current = onMessage;
   onConnectedRef.current = onConnected;
+  onReconnectingRef.current = onReconnecting;
   onErrorRef.current = onError;
 
   useEffect(() => {
@@ -105,6 +109,7 @@ export function useSSE({
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
           const delay = Math.pow(2, reconnectAttempts) * 1000;
           reconnectAttempts++;
+          onReconnectingRef.current?.(reconnectAttempts);
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
             void connectSSE();
