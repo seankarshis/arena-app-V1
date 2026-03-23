@@ -185,7 +185,7 @@ export async function pauseInterview(
     data: {
       status: 'paused',
       pausedAt: now,
-      sessionSnapshot: session ? (session as Prisma.InputJsonValue) : Prisma.DbNull,
+      sessionSnapshot: session ? (session as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     },
   });
 
