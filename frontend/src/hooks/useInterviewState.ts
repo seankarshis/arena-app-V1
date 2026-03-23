@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, gql } from '@apollo/client';
 import { useSSE, type SSEMessage } from './useSSE';
+import { usePTT } from './usePTT';
 
 // ---------------------------------------------------------------------------
 // State machine states
@@ -12,6 +13,10 @@ export type InterviewState =
   | 'READY'
   | 'STARTING'
   | 'AWAITING_INPUT'
+  | 'RECORDING'
+  | 'REVIEW'
+  | 'REDO'
+  | 'MEDIA_ERROR'
   | 'PROCESSING'
   | 'LLM_STREAMING'
   | 'SKIPPING'
@@ -50,6 +55,17 @@ export interface InterviewSession {
   errorMessage: string | null;
   /** Set when startInterview succeeds; used for session duration display. */
   startedAt: Date | null;
+  // ---- Voice recording fields ----
+  /** Live partial transcript during RECORDING state. */
+  partialTranscript: string;
+  /** Final transcript in REVIEW/REDO; null if STT WebSocket failed or not yet received. */
+  finalTranscript: string | null;
+  /** Captured audio Blob from the most recent recording; held until upload. */
+  audioBlob: Blob | null;
+  /** True when recording has passed the 4-minute warning threshold. */
+  nearingTimeLimit: boolean;
+  /** Non-null when microphone access fails; drives PTT disabled state. */
+  microphoneError: string | null;
 }
 
 export interface InterviewActions {
@@ -62,6 +78,26 @@ export interface InterviewActions {
   endInterview: () => Promise<void>;
   /** Return to AWAITING_INPUT from LLM-initiated COMPLETING state. */
   continueFromCompletion: () => void;
+  // ---- Voice recording actions ----
+  /** Press PTT button: start recording (valid from AWAITING_INPUT, IDLE_WARNING, REDO, REVIEW). */
+  pressPTT: () => Promise<void>;
+  /** Release PTT button: stop recording and enter REVIEW state. */
+  releasePTT: () => void;
+  /** Explicitly submit the current REVIEW transcript (also fired by auto-send timer). */
+  submitVoice: () => Promise<void>;
+  /** Update the editable transcript text in REVIEW/REDO without submitting. */
+  updateFinalTranscript: (text: string) => void;
+  /** Submit edited/typed text from REDO → transitions to REVIEW then auto-sends.
+   *  Pass fromScratch=true when the user typed fresh text (not editing a prior transcript). */
+  submitEditedTranscript: (text: string, fromScratch?: boolean) => void;
+  /** Save current recording as a draft and enter REDO state. */
+  redo: () => Promise<void>;
+  /** Re-attempt microphone access after a MEDIA_ERROR. */
+  retryMicrophone: () => Promise<void>;
+  /** Call when transcript text field receives focus (pauses auto-send timer). */
+  onTranscriptFocus: () => void;
+  /** Call when transcript text field loses focus (restarts auto-send timer). */
+  onTranscriptBlur: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +163,22 @@ const COMPLETE_INTERVIEW = gql`
   }
 `;
 
+const SAVE_DRAFT = gql`
+  mutation SaveDraft(
+    $interviewId: ID!
+    $transcript: String!
+    $inputMode: String!
+  ) {
+    saveDraft(
+      interviewId: $interviewId
+      transcript: $transcript
+      inputMode: $inputMode
+    ) {
+      draftId
+    }
+  }
+`;
+
 // ---------------------------------------------------------------------------
 // Mutation result types (for type-safe data access)
 // ---------------------------------------------------------------------------
@@ -146,6 +198,10 @@ const SSE_ENABLED_STATES: ReadonlySet<InterviewState> = new Set([
   'SKIPPING',
   'IDLE_WARNING',
   'RESUMING',
+  'RECORDING',
+  'REVIEW',
+  'REDO',
+  'MEDIA_ERROR',
   // Keep SSE open during COMPLETING so a submitted final thought can stream a response
   'COMPLETING',
 ]);
@@ -171,6 +227,11 @@ export function useInterviewState(templateId: string): {
     idlePrompt: null,
     errorMessage: null,
     startedAt: null,
+    partialTranscript: '',
+    finalTranscript: null,
+    audioBlob: null,
+    nearingTimeLimit: false,
+    microphoneError: null,
   });
 
   // Refs for reading current values inside callbacks without stale closures
@@ -178,6 +239,21 @@ export function useInterviewState(templateId: string): {
   const sessionRef = useRef(session);
   machineStateRef.current = machineState;
   sessionRef.current = session;
+
+  // ---------------------------------------------------------------------------
+  // PTT hook
+  // ---------------------------------------------------------------------------
+
+  const ptt = usePTT();
+
+  // ---------------------------------------------------------------------------
+  // Auto-send timer management
+  // ---------------------------------------------------------------------------
+
+  const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // pendingInputMode tracks what inputMode to use when auto-send fires
+  const pendingInputModeRef = useRef<'voice' | 'edited' | 'text'>('voice');
 
   // ---------------------------------------------------------------------------
   // Mutations
@@ -209,6 +285,15 @@ export function useInterviewState(templateId: string): {
     unknown,
     { interviewId: string }
   >(COMPLETE_INTERVIEW);
+
+  const [saveDraftMutation] = useMutation<
+    unknown,
+    { interviewId: string; transcript: string; inputMode: string }
+  >(SAVE_DRAFT);
+
+  // Keep mutation refs current so timer callbacks always use the latest version
+  const submitResponseMutationRef = useRef(submitResponseMutation);
+  useEffect(() => { submitResponseMutationRef.current = submitResponseMutation; }, [submitResponseMutation]);
 
   // ---------------------------------------------------------------------------
   // SSE message handler
@@ -289,6 +374,84 @@ export function useInterviewState(templateId: string): {
   });
 
   // ---------------------------------------------------------------------------
+  // PTT state → session sync effects
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    setSession((prev) => ({ ...prev, partialTranscript: ptt.partialTranscript }));
+  }, [ptt.partialTranscript]);
+
+  useEffect(() => {
+    setSession((prev) => ({ ...prev, audioBlob: ptt.audioBlob }));
+  }, [ptt.audioBlob]);
+
+  useEffect(() => {
+    setSession((prev) => ({ ...prev, nearingTimeLimit: ptt.nearingTimeLimit }));
+  }, [ptt.nearingTimeLimit]);
+
+  useEffect(() => {
+    setSession((prev) => ({ ...prev, microphoneError: ptt.microphoneError }));
+  }, [ptt.microphoneError]);
+
+  // When final_transcript arrives from STT, sync to session and start auto-send
+  // (auto-send only starts if we're in REVIEW state when the transcript arrives)
+  useEffect(() => {
+    if (ptt.finalTranscript === null) return;
+    setSession((prev) => ({ ...prev, finalTranscript: ptt.finalTranscript }));
+    if (machineStateRef.current === 'REVIEW') {
+      startAutoSend();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ptt.finalTranscript]);
+
+  // ---------------------------------------------------------------------------
+  // Auto-send helpers (stable — only use refs and React setters)
+  // ---------------------------------------------------------------------------
+
+  const clearAutoSend = useCallback(() => {
+    if (autoSendTimerRef.current) {
+      clearTimeout(autoSendTimerRef.current);
+      autoSendTimerRef.current = null;
+    }
+  }, []);
+
+  // startAutoSend: starts the 2-second auto-send countdown.
+  // Stable — depends only on clearAutoSend (which has [] deps) and refs.
+  const startAutoSend = useCallback(() => {
+    clearAutoSend();
+    autoSendTimerRef.current = setTimeout(() => {
+      autoSendTimerRef.current = null;
+      if (machineStateRef.current !== 'REVIEW') return;
+      const sess = sessionRef.current;
+      if (!sess.interviewId) return;
+
+      const transcript = sess.finalTranscript ?? '';
+      const inputMode = pendingInputModeRef.current;
+
+      setSession((prev) => ({
+        ...prev,
+        transcript: [
+          ...prev.transcript,
+          { questionText: prev.currentQuestion, answerText: transcript, isSkipped: false },
+        ],
+        streamingText: '',
+        partialTranscript: '',
+        finalTranscript: null,
+        idlePrompt: null,
+      }));
+      setMachineState('PROCESSING');
+
+      submitResponseMutationRef.current({
+        variables: { interviewId: sess.interviewId, rawTranscription: transcript, inputMode },
+      }).catch((err: unknown) => {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to submit response';
+        setSession((prev) => ({ ...prev, errorMessage }));
+        setMachineState('ERROR');
+      });
+    }, 2000);
+  }, [clearAutoSend]);
+
+  // ---------------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------------
 
@@ -301,6 +464,10 @@ export function useInterviewState(templateId: string): {
       if (!interviewId) throw new Error('No interview ID returned from server');
       // Set interviewId and startedAt first — SSE enabled check reads interviewId
       setSession((prev) => ({ ...prev, interviewId, startedAt: new Date() }));
+
+      // Eagerly request microphone permission (non-blocking — interview continues on failure)
+      ptt.requestPermission().catch(() => { /* microphoneError set in session by effect */ });
+
       // LLM_STREAMING enables SSE; backend streams the first question immediately
       setMachineState('LLM_STREAMING');
     } catch (err) {
@@ -309,7 +476,7 @@ export function useInterviewState(templateId: string): {
       setSession((prev) => ({ ...prev, errorMessage }));
       setMachineState('ERROR');
     }
-  }, [templateId, startInterviewMutation]);
+  }, [templateId, startInterviewMutation, ptt]);
 
   const submitText = useCallback(
     async (text: string) => {
@@ -467,6 +634,161 @@ export function useInterviewState(templateId: string): {
     setMachineState('AWAITING_INPUT');
   }, []);
 
+  // ---- PTT actions ----
+
+  const pressPTT = useCallback(async () => {
+    const state = machineStateRef.current;
+    const currentSession = sessionRef.current;
+    if (
+      state !== 'AWAITING_INPUT' &&
+      state !== 'IDLE_WARNING' &&
+      state !== 'REDO' &&
+      state !== 'REVIEW'
+    )
+      return;
+    if (!currentSession.interviewId) return;
+    // Guard: if mic is unavailable, don't attempt recording
+    if (currentSession.microphoneError) return;
+
+    // Cancel auto-send immediately (spec: PTT mousedown kills auto-send unconditionally)
+    clearAutoSend();
+
+    // If coming from REVIEW, reset prior recording state before starting fresh
+    if (state === 'REVIEW') {
+      ptt.reset();
+      setSession((prev) => ({
+        ...prev,
+        partialTranscript: '',
+        finalTranscript: null,
+        audioBlob: null,
+      }));
+    }
+
+    pendingInputModeRef.current = 'voice';
+    setMachineState('RECORDING');
+
+    const started = await ptt.start(currentSession.interviewId);
+    if (!started) {
+      // Mic failure during start — ptt.microphoneError synced to session by effect
+      setMachineState('MEDIA_ERROR');
+    }
+  }, [ptt, clearAutoSend]);
+
+  const releasePTT = useCallback(() => {
+    if (machineStateRef.current !== 'RECORDING') return;
+    ptt.stop();
+    // Enter REVIEW immediately; auto-send timer starts when finalTranscript arrives
+    setMachineState('REVIEW');
+  }, [ptt]);
+
+  const submitVoice = useCallback(async () => {
+    if (machineStateRef.current !== 'REVIEW') return;
+    clearAutoSend();
+    const sess = sessionRef.current;
+    if (!sess.interviewId) return;
+
+    const transcript = sess.finalTranscript ?? '';
+    const inputMode = pendingInputModeRef.current;
+
+    setSession((prev) => ({
+      ...prev,
+      transcript: [
+        ...prev.transcript,
+        { questionText: prev.currentQuestion, answerText: transcript, isSkipped: false },
+      ],
+      streamingText: '',
+      partialTranscript: '',
+      finalTranscript: null,
+      idlePrompt: null,
+    }));
+    setMachineState('PROCESSING');
+
+    try {
+      await submitResponseMutation({
+        variables: {
+          interviewId: sess.interviewId,
+          rawTranscription: transcript,
+          inputMode,
+        },
+      });
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to submit response';
+      setSession((prev) => ({ ...prev, errorMessage }));
+      setMachineState('ERROR');
+    }
+  }, [submitResponseMutation, clearAutoSend]);
+
+  const updateFinalTranscript = useCallback((text: string) => {
+    setSession((prev) => ({ ...prev, finalTranscript: text }));
+  }, []);
+
+  const submitEditedTranscript = useCallback(
+    (text: string, fromScratch = false) => {
+      if (machineStateRef.current !== 'REDO') return;
+      pendingInputModeRef.current = fromScratch ? 'text' : 'edited';
+      setSession((prev) => ({ ...prev, finalTranscript: text, audioBlob: null }));
+      setMachineState('REVIEW');
+      // Start auto-send immediately since we already have the text
+      startAutoSend();
+    },
+    [startAutoSend]
+  );
+
+  const redo = useCallback(async () => {
+    if (machineStateRef.current !== 'REVIEW') return;
+    const currentSession = sessionRef.current;
+    if (!currentSession.interviewId) return;
+
+    clearAutoSend();
+    const transcript = currentSession.finalTranscript ?? '';
+
+    setMachineState('REDO');
+
+    // Save draft to DB (non-blocking — REDO proceeds even if this fails)
+    saveDraftMutation({
+      variables: {
+        interviewId: currentSession.interviewId,
+        transcript,
+        inputMode: pendingInputModeRef.current,
+      },
+    }).catch(() => { /* draft save failure is non-fatal */ });
+
+    // Reset PTT state so the next press starts fresh
+    ptt.reset();
+    setSession((prev) => ({
+      ...prev,
+      partialTranscript: '',
+      audioBlob: null,
+      // Keep finalTranscript so user can edit it in REDO
+    }));
+  }, [ptt, saveDraftMutation, clearAutoSend]);
+
+  const retryMicrophone = useCallback(async () => {
+    const granted = await ptt.requestPermission();
+    if (granted) {
+      const state = machineStateRef.current;
+      // Return from MEDIA_ERROR to AWAITING_INPUT so the interview can continue
+      if (state === 'MEDIA_ERROR') {
+        setMachineState('AWAITING_INPUT');
+      }
+    }
+  }, [ptt]);
+
+  const onTranscriptFocus = useCallback(() => {
+    clearAutoSend();
+  }, [clearAutoSend]);
+
+  const onTranscriptBlur = useCallback(() => {
+    // Restart auto-send if we're still in REVIEW and have a transcript
+    if (
+      machineStateRef.current === 'REVIEW' &&
+      sessionRef.current.finalTranscript !== null
+    ) {
+      startAutoSend();
+    }
+  }, [startAutoSend]);
+
   return {
     state: machineState,
     session,
@@ -478,6 +800,15 @@ export function useInterviewState(templateId: string): {
       resumeInterview,
       endInterview,
       continueFromCompletion,
+      pressPTT,
+      releasePTT,
+      submitVoice,
+      updateFinalTranscript,
+      submitEditedTranscript,
+      redo,
+      retryMicrophone,
+      onTranscriptFocus,
+      onTranscriptBlur,
     },
   };
 }
