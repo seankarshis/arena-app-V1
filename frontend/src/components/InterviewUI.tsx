@@ -8,6 +8,7 @@ import type {
   InterviewActions,
 } from '@/hooks/useInterviewState';
 import TranscriptArea from './TranscriptArea';
+import CompletionSummary from './CompletionSummary';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -76,9 +77,7 @@ export default function InterviewUI({ state, session, actions }: Props) {
 
   const handleEnd = async () => {
     if (
-      window.confirm(
-        'End your interview now? Your answers so far will be saved.'
-      )
+      window.confirm('End your interview now? Your answers so far will be saved.')
     ) {
       await actions.endInterview();
     }
@@ -88,21 +87,7 @@ export default function InterviewUI({ state, session, actions }: Props) {
   // Full-screen overlay states
   // =========================================================================
 
-  if (state === 'STARTING') {
-    return <LoadingScreen message="Starting your interview…" />;
-  }
-
-  if (state === 'UPLOADING') {
-    return <LoadingScreen message="Finishing up…" />;
-  }
-
-  if (state === 'RESUMING') {
-    return <LoadingScreen message="Resuming your interview…" />;
-  }
-
-  if (state === 'COMPLETED') {
-    const answered = session.transcript.filter((t) => !t.isSkipped).length;
-    const skipped = session.transcript.filter((t) => t.isSkipped).length;
+  if (state === 'READY') {
     return (
       <div
         style={{
@@ -118,57 +103,45 @@ export default function InterviewUI({ state, session, actions }: Props) {
         }}
       >
         <div style={{ maxWidth: 480 }}>
-          <div
+          <span
             style={{
-              width: 64,
-              height: 64,
-              borderRadius: '50%',
-              backgroundColor: 'var(--dark-maroon)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 24px',
+              fontFamily: 'var(--font-hero)',
+              fontSize: 20,
+              color: 'var(--graphite)',
+              display: 'block',
+              marginBottom: 32,
             }}
           >
-            <svg
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--ivory)"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          </div>
-          <h2
+            Arena
+          </span>
+          <h1
             style={{
               fontFamily: 'var(--font-primary)',
               fontWeight: 600,
-              fontSize: 24,
+              fontSize: 26,
               color: 'var(--graphite)',
               marginBottom: 12,
+              letterSpacing: '-0.01em',
             }}
           >
-            Interview Complete
-          </h2>
+            Ready to begin?
+          </h1>
           <p
-            style={{ color: 'var(--grey)', fontSize: 16, lineHeight: 1.6, marginBottom: 8 }}
+            style={{
+              color: 'var(--grey)',
+              fontSize: 16,
+              lineHeight: 1.6,
+              marginBottom: 40,
+            }}
           >
-            You answered {answered} question{answered !== 1 ? 's' : ''}.
-            {skipped > 0 && ` (${skipped} skipped)`}
-          </p>
-          <p
-            style={{ color: 'var(--grey)', fontSize: 14, marginBottom: 40 }}
-          >
-            Your responses are being processed. Thank you for your time.
+            When you click Start, your interview will begin. Take your time and
+            answer each question as fully as you like. You can type your
+            responses or skip questions.
           </p>
           <button
-            onClick={() => router.push('/')}
+            onClick={() => void actions.startInterview()}
             style={{
-              padding: '12px 32px',
+              padding: '14px 44px',
               borderRadius: 999,
               border: 'none',
               backgroundColor: 'var(--horizon-red)',
@@ -177,12 +150,31 @@ export default function InterviewUI({ state, session, actions }: Props) {
               fontWeight: 600,
               fontSize: 15,
               cursor: 'pointer',
+              letterSpacing: '0.01em',
             }}
           >
-            Back to Home
+            Start Interview
           </button>
         </div>
       </div>
+    );
+  }
+
+  if (state === 'STARTING') {
+    return <LoadingScreen message="Starting your interview…" />;
+  }
+
+  if (state === 'UPLOADING') {
+    return <LoadingScreen message="Finishing up…" />;
+  }
+
+  if (state === 'RESUMING') {
+    return <LoadingScreen message="Resuming your interview…" />;
+  }
+
+  if (state === 'COMPLETED') {
+    return (
+      <CompletionSummary session={session} onGoHome={() => router.push('/')} />
     );
   }
 
@@ -231,7 +223,14 @@ export default function InterviewUI({ state, session, actions }: Props) {
               before this session expires.
             </p>
           )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              alignItems: 'center',
+            }}
+          >
             <button
               onClick={() => void actions.resumeInterview()}
               style={{
@@ -297,7 +296,14 @@ export default function InterviewUI({ state, session, actions }: Props) {
           <p style={{ color: 'var(--grey)', fontSize: 15, marginBottom: 32 }}>
             {session.errorMessage ?? 'An unexpected error occurred.'}
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              alignItems: 'center',
+            }}
+          >
             <button
               onClick={() => window.location.reload()}
               style={{
@@ -349,9 +355,20 @@ export default function InterviewUI({ state, session, actions }: Props) {
   const isThinking = state === 'PROCESSING' || state === 'SKIPPING';
   const isCompleting = state === 'COMPLETING';
 
-  // What text to show in the current question panel
+  // Pause is only valid from AWAITING_INPUT / IDLE_WARNING
+  const canPause = state === 'AWAITING_INPUT' || state === 'IDLE_WARNING';
+  // End is valid from AWAITING_INPUT, IDLE_WARNING, and COMPLETING
+  const canEnd =
+    state === 'AWAITING_INPUT' ||
+    state === 'IDLE_WARNING' ||
+    state === 'COMPLETING';
+
+  // During thinking states show only the ellipsis; the old question text has
+  // already moved to the transcript, and the new question hasn't arrived yet.
   const questionPanelText = isStreaming
     ? session.streamingText
+    : isThinking
+    ? ''
     : session.currentQuestion;
 
   return (
@@ -411,39 +428,41 @@ export default function InterviewUI({ state, session, actions }: Props) {
           />
         </div>
 
-        {/* Header controls — only shown when user can interact */}
-        {isInputEnabled && (
-          <>
-            <button
-              onClick={() => void handlePause()}
-              style={{
-                background: 'none',
-                border: '1px solid var(--ivory-tint)',
-                borderRadius: 6,
-                padding: '6px 14px',
-                color: 'var(--grey)',
-                fontFamily: 'var(--font-primary)',
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              Pause
-            </button>
-            <button
-              onClick={() => void handleEnd()}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--grey)',
-                fontFamily: 'var(--font-primary)',
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              End Interview
-            </button>
-          </>
-        )}
+        {/* Header controls — always visible; disabled when interaction not available */}
+        <button
+          onClick={canPause ? () => void handlePause() : undefined}
+          disabled={!canPause}
+          style={{
+            background: 'none',
+            border: '1px solid var(--ivory-tint)',
+            borderRadius: 6,
+            padding: '6px 14px',
+            color: 'var(--grey)',
+            fontFamily: 'var(--font-primary)',
+            fontSize: 13,
+            cursor: canPause ? 'pointer' : 'default',
+            opacity: canPause ? 1 : 0.35,
+            transition: 'opacity 0.15s',
+          }}
+        >
+          Pause
+        </button>
+        <button
+          onClick={canEnd ? () => void handleEnd() : undefined}
+          disabled={!canEnd}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--grey)',
+            fontFamily: 'var(--font-primary)',
+            fontSize: 13,
+            cursor: canEnd ? 'pointer' : 'default',
+            opacity: canEnd ? 1 : 0.35,
+            transition: 'opacity 0.15s',
+          }}
+        >
+          End Interview
+        </button>
       </header>
 
       {/* ---- Idle warning banner ---- */}
@@ -496,13 +515,11 @@ export default function InterviewUI({ state, session, actions }: Props) {
             />
           )}
           {isThinking && (
-            <span style={{ color: 'rgba(245,242,236,0.5)', marginLeft: 8 }}>
-              ···
-            </span>
+            <span style={{ color: 'rgba(245,242,236,0.5)' }}>···</span>
           )}
         </p>
 
-        {/* Skip button — available only when input is enabled and not completing */}
+        {/* Skip button — available only when awaiting input */}
         {(state === 'AWAITING_INPUT' || state === 'IDLE_WARNING') && (
           <button
             onClick={() => void actions.skipQuestion()}
@@ -537,14 +554,8 @@ export default function InterviewUI({ state, session, actions }: Props) {
         }}
       >
         {isCompleting ? (
-          /* COMPLETING: closing message shown — offer to add something or finish */
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-            }}
-          >
+          /* COMPLETING: show optional final-thought input + primary Finish button */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', gap: 10 }}>
               <input
                 type="text"
@@ -583,12 +594,7 @@ export default function InterviewUI({ state, session, actions }: Props) {
                 </button>
               )}
             </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-              }}
-            >
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => void actions.endInterview()}
                 style={{
@@ -616,9 +622,7 @@ export default function InterviewUI({ state, session, actions }: Props) {
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={!isInputEnabled}
-              placeholder={
-                isInputEnabled ? 'Type your response…' : 'Waiting…'
-              }
+              placeholder={isInputEnabled ? 'Type your response…' : 'Waiting…'}
               style={{
                 flex: 1,
                 padding: '12px 16px',
@@ -654,9 +658,7 @@ export default function InterviewUI({ state, session, actions }: Props) {
                 fontWeight: 600,
                 fontSize: 14,
                 cursor:
-                  isInputEnabled && inputText.trim()
-                    ? 'pointer'
-                    : 'not-allowed',
+                  isInputEnabled && inputText.trim() ? 'pointer' : 'not-allowed',
                 transition: 'background-color 0.15s ease',
               }}
             >
