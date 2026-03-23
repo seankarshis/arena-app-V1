@@ -719,7 +719,6 @@ export const resolvers = {
 
       try {
         const { CognitoIdentityProviderClient, AdminListGroupsForUserCommand } =
-          // @ts-expect-error — package installed at deploy time, not in dev dependencies
           await import('@aws-sdk/client-cognito-identity-provider');
 
         const client = new CognitoIdentityProviderClient({
