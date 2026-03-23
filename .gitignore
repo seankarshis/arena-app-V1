@@ -5,3 +5,4 @@ dist/
 .env.local
 *.js.map
 pgdata/
+*.tsbuildinfo
