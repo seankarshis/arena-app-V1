@@ -3,7 +3,7 @@
 // startInterview, pauseInterview, resumeInterview
 // ---------------------------------------------------------------------------
 
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import {
   createSession,
   getSession,
@@ -185,7 +185,7 @@ export async function pauseInterview(
     data: {
       status: 'paused',
       pausedAt: now,
-      sessionSnapshot: session ? (session as unknown as Record<string, unknown>) : null,
+      sessionSnapshot: session ? (session as unknown as Record<string, unknown>) : Prisma.DbNull,
     },
   });
 
