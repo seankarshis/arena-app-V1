@@ -36,6 +36,7 @@
     "@opentelemetry/sdk-node": "^0.213.0",
     "@opentelemetry/semantic-conventions": "^1.27.0",
     "@prisma/client": "^5.22.0",
+    "dataloader": "^2.2.3",
     "fastify": "^4.28.0",
     "graphql": "^16.9.0",
     "ioredis": "^5.4.1",
