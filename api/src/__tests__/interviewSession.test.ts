@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Prisma } from '@prisma/client';
 import {
   startInterview,
   pauseInterview,
@@ -400,7 +401,7 @@ describe('pauseInterview', () => {
     expect(prisma.interview.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          sessionSnapshot: null,
+          sessionSnapshot: Prisma.DbNull,
         }),
       }),
     );
