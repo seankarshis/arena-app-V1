@@ -1,10 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useApolloClient } from '@apollo/client';
-import { logout } from '@/lib/auth';
+import { logout, getUser } from '@/lib/auth';
 
 // ---------------------------------------------------------------------------
 // Nav items
@@ -27,6 +27,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const router = useRouter();
   const client = useApolloClient();
+  const [username, setUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    getUser().then((u) => { if (u) setUsername(u.username); });
+  }, []);
 
   async function handleSignOut() {
     await logout();
@@ -73,7 +78,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         {/* Nav links */}
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 12px' }}>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 12px', flex: 1 }}>
           {NAV_ITEMS.map((item) => {
             const active = isActive(item.href);
             return (
@@ -113,33 +118,41 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             );
           })}
         </nav>
-      </aside>
 
-      {/* Main content */}
-      <div style={{ flex: 1, marginLeft: 240, minHeight: '100vh', backgroundColor: 'var(--ivory)' }}>
-        {/* Top bar */}
+        {/* User info + Sign out */}
         <div
           style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            alignItems: 'center',
-            padding: '12px 24px',
-            borderBottom: '1px solid var(--ivory-tint)',
-            backgroundColor: 'var(--white)',
+            padding: '16px 20px',
+            borderTop: '1px solid var(--ivory-tint)',
           }}
         >
+          {username && (
+            <p
+              style={{
+                fontFamily: 'var(--font-primary)',
+                fontSize: 12,
+                color: 'var(--grey)',
+                marginBottom: 8,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={username}
+            >
+              {username}
+            </p>
+          )}
           <button
             onClick={handleSignOut}
             style={{
               background: 'none',
               border: 'none',
               fontFamily: 'var(--font-primary)',
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: 500,
               color: 'var(--grey)',
               cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: 4,
+              padding: 0,
               transition: 'color 0.15s',
             }}
             onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--horizon-red)'; }}
@@ -148,6 +161,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             Sign out
           </button>
         </div>
+      </aside>
+
+      {/* Main content */}
+      <div style={{ flex: 1, marginLeft: 240, minHeight: '100vh', backgroundColor: 'var(--ivory)' }}>
         <main>{children}</main>
       </div>
     </div>
