@@ -24,7 +24,6 @@ export const typeDefs = `#graphql
   type Tag {
     id: ID!
     label: String!
-    tagType: String!
     isActive: Boolean!
   }
 
@@ -352,7 +351,7 @@ export const typeDefs = `#graphql
     ): QuestionConnection!
 
     """Fetch tags, optionally filtered by type. Not paginated."""
-    getTags(tagType: String, includeInactive: Boolean): [Tag!]!
+    getTags(includeInactive: Boolean): [Tag!]!
 
     """Fetch a single interview response with full artifact data."""
     getInterviewResponse(id: ID!): InterviewResponse
@@ -383,6 +382,16 @@ export const typeDefs = `#graphql
       first: Int
       after: String
     ): AuditLogConnection!
+
+    """List all users (admin only). Not paginated for POC."""
+    listUsers: [User!]!
+
+    """Paginated list of all interviews (admin only)."""
+    listAllInterviews(
+      status: String
+      first: Int
+      after: String
+    ): InterviewConnection!
   }
 
   # -----------------------------------------------------------------------
@@ -391,8 +400,8 @@ export const typeDefs = `#graphql
 
   type Mutation {
     # --- Tag management (admin only) ---
-    createTag(label: String!, tagType: String!): Tag!
-    updateTag(id: ID!, label: String, tagType: String, isActive: Boolean): Tag!
+    createTag(label: String!): Tag!
+    updateTag(id: ID!, label: String, isActive: Boolean): Tag!
 
     # --- Question management (admin only) ---
     createQuestion(text: String!, category: String!, tagIds: [ID!]): Question!
@@ -427,6 +436,7 @@ export const typeDefs = `#graphql
       isRequired: Boolean
       followupTriggers: JSON
     ): TemplateQuestion!
+    reorderTemplateQuestions(templateId: ID!, orderedIds: [ID!]!): [TemplateQuestion!]!
     removeQuestionFromTemplate(id: ID!): Boolean!
 
     # --- User management (admin only) ---

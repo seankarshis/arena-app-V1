@@ -173,7 +173,7 @@ interface TemplateQuestionRow {
   question: {
     text: string;
     questionTags: Array<{
-      tag: { id: string; label: string; tagType: string };
+      tag: { id: string; label: string };
     }>;
   };
 }
@@ -347,7 +347,6 @@ export async function submitResponse(
   const tagsAtTime = (tqRow?.question.questionTags ?? []).map((qt) => ({
     id: qt.tag.id,
     label: qt.tag.label,
-    tagType: qt.tag.tagType,
   }));
 
   // 8. Create InterviewResponse record

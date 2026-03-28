@@ -1,33 +1,27 @@
 'use client';
 
-import { Amplify } from 'aws-amplify';
-import {
-  signIn,
-  signOut,
-  fetchAuthSession,
-  getCurrentUser,
-  type SignInInput,
-} from 'aws-amplify/auth';
+const isBypass = process.env.NEXT_PUBLIC_COGNITO_BYPASS === 'true';
 
-// Configure Amplify with Cognito settings from environment variables.
-// NEXT_PUBLIC_ prefix makes these available in the browser.
-Amplify.configure(
-  {
-    Auth: {
-      Cognito: {
-        userPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID ?? '',
-        userPoolClientId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID ?? '',
+// Only configure Amplify when not bypassing
+if (!isBypass) {
+  const { Amplify } = require('aws-amplify');
+  Amplify.configure(
+    {
+      Auth: {
+        Cognito: {
+          userPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID ?? '',
+          userPoolClientId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID ?? '',
+        },
       },
     },
-  },
-  { ssr: true }
-);
+    { ssr: true }
+  );
+}
 
-/**
- * Returns the current Cognito ID token JWT string, or null if not authenticated.
- */
 export async function getIdToken(): Promise<string | null> {
+  if (isBypass) return null;
   try {
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
     return session.tokens?.idToken?.toString() ?? null;
   } catch {
@@ -35,51 +29,45 @@ export async function getIdToken(): Promise<string | null> {
   }
 }
 
-/**
- * Returns the groups from the current user's Cognito JWT, or an empty array.
- */
 export async function getUserGroups(): Promise<string[]> {
+  if (isBypass) return ['admin'];
   try {
+    const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
     const payload = session.tokens?.idToken?.payload;
     const groups = payload?.['cognito:groups'];
-    if (Array.isArray(groups)) {
-      return groups as string[];
-    }
+    if (Array.isArray(groups)) return groups as string[];
     return [];
   } catch {
     return [];
   }
 }
 
-/**
- * Returns true if the current user belongs to the 'admin' Cognito group.
- */
 export async function isAdmin(): Promise<boolean> {
   const groups = await getUserGroups();
   return groups.includes('admin');
 }
 
-/**
- * Sign in with email/password. Returns the sign-in result.
- */
 export async function login(email: string, password: string) {
-  const input: SignInInput = { username: email, password };
-  return signIn(input);
+  if (isBypass) {
+    return { isSignedIn: true, nextStep: { signInStep: 'DONE' } };
+  }
+  const { signIn } = await import('aws-amplify/auth');
+  return signIn({ username: email, password });
 }
 
-/**
- * Sign out the current user.
- */
 export async function logout() {
+  if (isBypass) return;
+  const { signOut } = await import('aws-amplify/auth');
   return signOut();
 }
 
-/**
- * Returns the currently authenticated user, or null if not signed in.
- */
 export async function getUser() {
+  if (isBypass) {
+    return { userId: 'mock-admin', username: 'dev@localhost' };
+  }
   try {
+    const { getCurrentUser } = await import('aws-amplify/auth');
     return await getCurrentUser();
   } catch {
     return null;

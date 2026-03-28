@@ -49,7 +49,7 @@ const CREATE_TEMPLATE = gql`
 
 const primaryBtn: React.CSSProperties = {
   padding: '10px 20px',
-  borderRadius: 8,
+  borderRadius: 999,
   border: 'none',
   backgroundColor: 'var(--horizon-red)',
   color: 'var(--white)',
@@ -61,7 +61,7 @@ const primaryBtn: React.CSSProperties = {
 
 const secondaryBtn: React.CSSProperties = {
   padding: '10px 20px',
-  borderRadius: 8,
+  borderRadius: 999,
   border: '1px solid var(--ivory-tint)',
   backgroundColor: 'var(--white)',
   color: 'var(--graphite)',
@@ -73,8 +73,8 @@ const secondaryBtn: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   padding: '10px 14px',
-  borderRadius: 8,
-  border: '1px solid var(--ivory-tint)',
+  borderRadius: 6,
+  border: '1px solid var(--grey)',
   backgroundColor: 'var(--ivory-tint)',
   fontFamily: 'var(--font-primary)',
   fontSize: 14,
@@ -283,13 +283,7 @@ export default function TemplatesPage() {
   const templates = data?.getTemplates ?? [];
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        backgroundColor: 'var(--ivory)',
-        fontFamily: 'var(--font-primary)',
-      }}
-    >
+    <>
       {/* Header */}
       <header
         style={{
@@ -491,6 +485,6 @@ export default function TemplatesPage() {
           error={createError}
         />
       )}
-    </div>
+    </>
   );
 }

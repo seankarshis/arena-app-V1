@@ -152,12 +152,11 @@ export const resolvers = {
     // --- Tags (not paginated) ---
     async getTags(
       _parent: unknown,
-      args: { tagType?: string | null; includeInactive?: boolean | null },
+      args: { includeInactive?: boolean | null },
       ctx: ArenaContext,
     ) {
       requireAuth(ctx);
       const where: Record<string, unknown> = {};
-      if (args.tagType) where.tagType = args.tagType;
       if (!args.includeInactive) where.isActive = true;
       return ctx.prisma.tag.findMany({ where, orderBy: { label: 'asc' } });
     },
@@ -178,7 +177,10 @@ export const resolvers = {
       if (!args.includeInactive) where.isActive = true;
       if (args.filters?.category) where.category = args.filters.category;
       if (args.filters?.searchText) {
-        where.text = { contains: args.filters.searchText, mode: 'insensitive' };
+        where.OR = [
+          { text: { contains: args.filters.searchText, mode: 'insensitive' } },
+          { category: { contains: args.filters.searchText, mode: 'insensitive' } },
+        ];
       }
       if (args.filters?.tagIds && args.filters.tagIds.length > 0) {
         where.questionTags = { some: { tagId: { in: args.filters.tagIds } } };
@@ -336,6 +338,29 @@ export const resolvers = {
         { first: args.first, after: args.after },
       );
     },
+
+    // --- List all users (admin only, not paginated) ---
+    async listUsers(_parent: unknown, _args: unknown, ctx: ArenaContext) {
+      requireAdmin(ctx);
+      return ctx.prisma.user.findMany({ orderBy: { name: 'asc' } });
+    },
+
+    // --- List all interviews (admin only, paginated) ---
+    async listAllInterviews(
+      _parent: unknown,
+      args: { status?: string | null; first?: number | null; after?: string | null },
+      ctx: ArenaContext,
+    ) {
+      requireAdmin(ctx);
+      const where: Record<string, unknown> = {};
+      if (args.status) where.status = args.status;
+      return paginate(
+        (a) => ctx.prisma.interview.findMany(a),
+        (a) => ctx.prisma.interview.count(a),
+        where,
+        { first: args.first, after: args.after },
+      );
+    },
   },
 
   // =========================================================================
@@ -346,7 +371,7 @@ export const resolvers = {
 
     async createTag(
       _parent: unknown,
-      args: { label: string; tagType: string },
+      args: { label: string },
       ctx: ArenaContext,
     ) {
       requireAdmin(ctx);
@@ -354,7 +379,7 @@ export const resolvers = {
       if (existing) {
         throw duplicateEntry('Tag with this label already exists', { label: args.label });
       }
-      return ctx.prisma.tag.create({ data: { label: args.label, tagType: args.tagType } });
+      return ctx.prisma.tag.create({ data: { label: args.label } });
     },
 
     async updateTag(
@@ -362,7 +387,6 @@ export const resolvers = {
       args: {
         id: string;
         label?: string | null;
-        tagType?: string | null;
         isActive?: boolean | null;
       },
       ctx: ArenaContext,
@@ -378,7 +402,6 @@ export const resolvers = {
 
       const data: Record<string, unknown> = {};
       if (args.label != null) data.label = args.label;
-      if (args.tagType != null) data.tagType = args.tagType;
       if (args.isActive != null) data.isActive = args.isActive;
 
       return ctx.prisma.tag.update({ where: { id: args.id }, data });
@@ -533,6 +556,52 @@ export const resolvers = {
       if (args.followupTriggers !== undefined) data.followupTriggers = args.followupTriggers as string;
 
       return ctx.prisma.templateQuestion.update({ where: { id: args.id }, data });
+    },
+
+    async reorderTemplateQuestions(
+      _parent: unknown,
+      args: { templateId: string; orderedIds: string[] },
+      ctx: ArenaContext,
+    ) {
+      requireAdmin(ctx);
+
+      // Verify all IDs belong to this template
+      const existing = await ctx.prisma.templateQuestion.findMany({
+        where: { templateId: args.templateId },
+      });
+      const existingIds = new Set(existing.map((tq) => tq.id));
+      for (const id of args.orderedIds) {
+        if (!existingIds.has(id)) {
+          throw notFound('Template question not found in this template', { templateQuestionId: id });
+        }
+      }
+
+      // Use a transaction: first set all to negative temps to avoid unique constraint
+      // collisions, then set the final values.
+      return ctx.prisma.$transaction(async (tx) => {
+        // Phase 1: clear to negative temporary values
+        await Promise.all(
+          args.orderedIds.map((id, i) =>
+            tx.templateQuestion.update({
+              where: { id },
+              data: { sequenceOrder: -(i + 1) },
+            })
+          )
+        );
+        // Phase 2: set final positive values
+        await Promise.all(
+          args.orderedIds.map((id, i) =>
+            tx.templateQuestion.update({
+              where: { id },
+              data: { sequenceOrder: i + 1 },
+            })
+          )
+        );
+        return tx.templateQuestion.findMany({
+          where: { templateId: args.templateId },
+          orderBy: { sequenceOrder: 'asc' },
+        });
+      });
     },
 
     async removeQuestionFromTemplate(

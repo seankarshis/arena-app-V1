@@ -34,11 +34,11 @@ export const TEMPLATE_ID = '30000000-0000-4000-a000-000000000001'
 // ── Seed data definitions ───────────────────────────────────────────────────
 
 const tags = [
-  { id: TAG_IDS.engineering, label: 'Engineering', tagType: 'department' },
-  { id: TAG_IDS.product, label: 'Product', tagType: 'department' },
-  { id: TAG_IDS.senior, label: 'Senior', tagType: 'seniority' },
-  { id: TAG_IDS.leadership, label: 'Leadership', tagType: 'role' },
-  { id: TAG_IDS.backend, label: 'Backend', tagType: 'domain' },
+  { id: TAG_IDS.engineering, label: 'Engineering' },
+  { id: TAG_IDS.product, label: 'Product' },
+  { id: TAG_IDS.senior, label: 'Senior' },
+  { id: TAG_IDS.leadership, label: 'Leadership' },
+  { id: TAG_IDS.backend, label: 'Backend' },
 ]
 
 const questions = [

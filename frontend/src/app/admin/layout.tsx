@@ -1,0 +1,155 @@
+'use client';
+
+import React from 'react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useApolloClient } from '@apollo/client';
+import { logout } from '@/lib/auth';
+
+// ---------------------------------------------------------------------------
+// Nav items
+// ---------------------------------------------------------------------------
+
+const NAV_ITEMS = [
+  { label: 'DASHBOARD', href: '/admin' },
+  { label: 'TEMPLATES', href: '/admin/templates' },
+  { label: 'QUESTIONS', href: '/admin/questions' },
+  { label: 'TAGS', href: '/admin/tags' },
+  { label: 'USERS', href: '/admin/users' },
+  { label: 'INTERVIEWS', href: '/admin/interviews' },
+];
+
+// ---------------------------------------------------------------------------
+// AdminLayout
+// ---------------------------------------------------------------------------
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const client = useApolloClient();
+
+  async function handleSignOut() {
+    await logout();
+    await client.clearStore();
+    router.push('/login');
+  }
+
+  const isActive = (href: string) => {
+    if (href === '/admin') return pathname === '/admin';
+    return pathname.startsWith(href);
+  };
+
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      {/* Sidebar */}
+      <aside
+        style={{
+          width: 240,
+          minWidth: 240,
+          backgroundColor: 'var(--white)',
+          borderRight: '1px solid var(--ivory-tint)',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          bottom: 0,
+          zIndex: 10,
+        }}
+      >
+        {/* Wordmark */}
+        <div style={{ padding: '28px 24px 32px' }}>
+          <span
+            style={{
+              fontFamily: 'var(--font-primary)',
+              fontWeight: 600,
+              fontSize: 18,
+              color: 'var(--graphite)',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            elastichorizon
+          </span>
+        </div>
+
+        {/* Nav links */}
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 12px' }}>
+          {NAV_ITEMS.map((item) => {
+            const active = isActive(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                style={{
+                  display: 'block',
+                  padding: '10px 12px 10px 16px',
+                  borderRadius: 6,
+                  borderLeft: active ? '3px solid var(--horizon-red)' : '3px solid transparent',
+                  backgroundColor: active ? 'rgba(122, 14, 19, 0.06)' : 'transparent',
+                  color: active ? 'var(--horizon-red)' : 'var(--grey)',
+                  fontFamily: 'var(--font-primary)',
+                  fontWeight: 500,
+                  fontSize: 14,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  textDecoration: 'none',
+                  transition: 'color 0.15s, background-color 0.15s',
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.color = 'var(--graphite)';
+                    e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.02)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.color = 'var(--grey)';
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+
+      {/* Main content */}
+      <div style={{ flex: 1, marginLeft: 240, minHeight: '100vh', backgroundColor: 'var(--ivory)' }}>
+        {/* Top bar */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            padding: '12px 24px',
+            borderBottom: '1px solid var(--ivory-tint)',
+            backgroundColor: 'var(--white)',
+          }}
+        >
+          <button
+            onClick={handleSignOut}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontFamily: 'var(--font-primary)',
+              fontSize: 14,
+              fontWeight: 500,
+              color: 'var(--grey)',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              borderRadius: 4,
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--horizon-red)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--grey)'; }}
+          >
+            Sign out
+          </button>
+        </div>
+        <main>{children}</main>
+      </div>
+    </div>
+  );
+}

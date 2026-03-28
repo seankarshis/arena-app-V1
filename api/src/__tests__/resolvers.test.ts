@@ -215,7 +215,7 @@ describe('Auth enforcement', () => {
 
   it('createTag rejects non-admin', async () => {
     await expect(
-      M.createTag({}, { label: 'a', tagType: 'role' }, userCtx()),
+      M.createTag({}, { label: 'a' }, userCtx()),
     ).rejects.toMatchObject({
       extensions: { code: 'FORBIDDEN' },
     });
@@ -223,7 +223,7 @@ describe('Auth enforcement', () => {
 
   it('createTag rejects unauthenticated', async () => {
     await expect(
-      M.createTag({}, { label: 'a', tagType: 'role' }, unauthCtx()),
+      M.createTag({}, { label: 'a' }, unauthCtx()),
     ).rejects.toMatchObject({
       extensions: { code: 'UNAUTHORIZED' },
     });
@@ -258,24 +258,13 @@ describe('Auth enforcement', () => {
 describe('Query.getTags', () => {
   it('returns active tags by default', async () => {
     const ctx = adminCtx();
-    const tags = [{ id: 't1', label: 'Backend', tagType: 'role', isActive: true }];
+    const tags = [{ id: 't1', label: 'Backend', isActive: true }];
     ctx.prisma.tag.findMany.mockResolvedValue(tags);
 
     const result = await Q.getTags({}, {}, ctx);
     expect(result).toEqual(tags);
     expect(ctx.prisma.tag.findMany).toHaveBeenCalledWith({
       where: { isActive: true },
-      orderBy: { label: 'asc' },
-    });
-  });
-
-  it('filters by tagType', async () => {
-    const ctx = adminCtx();
-    ctx.prisma.tag.findMany.mockResolvedValue([]);
-
-    await Q.getTags({}, { tagType: 'department' }, ctx);
-    expect(ctx.prisma.tag.findMany).toHaveBeenCalledWith({
-      where: { isActive: true, tagType: 'department' },
       orderBy: { label: 'asc' },
     });
   });
@@ -376,10 +365,10 @@ describe('Query.getQuestions', () => {
 
     await Q.getQuestions({}, { filters: { searchText: 'leadership' } }, ctx);
     const callArgs = ctx.prisma.question.findMany.mock.calls[0][0];
-    expect(callArgs.where.text).toEqual({
-      contains: 'leadership',
-      mode: 'insensitive',
-    });
+    expect(callArgs.where.OR).toEqual([
+      { text: { contains: 'leadership', mode: 'insensitive' } },
+      { category: { contains: 'leadership', mode: 'insensitive' } },
+    ]);
   });
 
   it('filters by tag IDs', async () => {
@@ -623,14 +612,14 @@ describe('Query.getAuditLog', () => {
 describe('Mutation.createTag', () => {
   it('creates a tag', async () => {
     const ctx = adminCtx();
-    const tag = { id: 't1', label: 'Backend', tagType: 'role', isActive: true };
+    const tag = { id: 't1', label: 'Backend', isActive: true };
     ctx.prisma.tag.findUnique.mockResolvedValue(null);
     ctx.prisma.tag.create.mockResolvedValue(tag);
 
-    const result = await M.createTag({}, { label: 'Backend', tagType: 'role' }, ctx);
+    const result = await M.createTag({}, { label: 'Backend' }, ctx);
     expect(result).toEqual(tag);
     expect(ctx.prisma.tag.create).toHaveBeenCalledWith({
-      data: { label: 'Backend', tagType: 'role' },
+      data: { label: 'Backend' },
     });
   });
 
@@ -639,11 +628,10 @@ describe('Mutation.createTag', () => {
     ctx.prisma.tag.findUnique.mockResolvedValue({
       id: 'existing',
       label: 'Backend',
-      tagType: 'role',
     });
 
     try {
-      await M.createTag({}, { label: 'Backend', tagType: 'role' }, ctx);
+      await M.createTag({}, { label: 'Backend' }, ctx);
       expect.fail('Should have thrown');
     } catch (err) {
       expectGqlError(err, 'DUPLICATE_ENTRY');
@@ -652,7 +640,7 @@ describe('Mutation.createTag', () => {
 
   it('requires admin', async () => {
     await expect(
-      M.createTag({}, { label: 'x', tagType: 'role' }, userCtx()),
+      M.createTag({}, { label: 'x' }, userCtx()),
     ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN' } });
   });
 });
@@ -663,7 +651,7 @@ describe('Mutation.createTag', () => {
 describe('Mutation.updateTag', () => {
   it('updates a tag', async () => {
     const ctx = adminCtx();
-    const existing = { id: 't1', label: 'Old', tagType: 'role', isActive: true };
+    const existing = { id: 't1', label: 'Old', isActive: true };
     const updated = { ...existing, label: 'New' };
     ctx.prisma.tag.findUnique
       .mockResolvedValueOnce(existing) // find by id
@@ -689,8 +677,8 @@ describe('Mutation.updateTag', () => {
   it('fails with DUPLICATE_ENTRY when label conflicts', async () => {
     const ctx = adminCtx();
     ctx.prisma.tag.findUnique
-      .mockResolvedValueOnce({ id: 't1', label: 'Old', tagType: 'role' })
-      .mockResolvedValueOnce({ id: 't2', label: 'Taken', tagType: 'role' }); // dup
+      .mockResolvedValueOnce({ id: 't1', label: 'Old' })
+      .mockResolvedValueOnce({ id: 't2', label: 'Taken' }); // dup
 
     try {
       await M.updateTag({}, { id: 't1', label: 'Taken' }, ctx);
@@ -702,7 +690,7 @@ describe('Mutation.updateTag', () => {
 
   it('soft-deletes with isActive: false', async () => {
     const ctx = adminCtx();
-    const existing = { id: 't1', label: 'Tag', tagType: 'role', isActive: true };
+    const existing = { id: 't1', label: 'Tag', isActive: true };
     ctx.prisma.tag.findUnique.mockResolvedValue(existing);
     ctx.prisma.tag.update.mockResolvedValue({ ...existing, isActive: false });
 

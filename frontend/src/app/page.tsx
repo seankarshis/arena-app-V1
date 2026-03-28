@@ -2,8 +2,8 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery, gql } from '@apollo/client';
-import { getUser } from '@/lib/auth';
+import { useQuery, useApolloClient, gql } from '@apollo/client';
+import { getUser, logout } from '@/lib/auth';
 
 // ---------------------------------------------------------------------------
 // GraphQL
@@ -55,6 +55,7 @@ interface GetMyAssignedTemplatesData {
 
 export default function HomePage() {
   const router = useRouter();
+  const client = useApolloClient();
 
   useEffect(() => {
     void getUser().then((user) => {
@@ -65,6 +66,12 @@ export default function HomePage() {
   const { data, loading, error } = useQuery<GetMyAssignedTemplatesData>(
     GET_MY_ASSIGNED_TEMPLATES
   );
+
+  async function handleSignOut() {
+    await logout();
+    await client.clearStore();
+    router.push('/login');
+  }
 
   function handleStartInterview(templateId: string, templateName: string) {
     router.push(
@@ -144,6 +151,26 @@ export default function HomePage() {
         <span style={{ color: 'var(--grey)', fontSize: 14 }}>
           elastichorizon
         </span>
+        <span style={{ flex: 1 }} />
+        <button
+          onClick={handleSignOut}
+          style={{
+            background: 'none',
+            border: 'none',
+            fontFamily: 'var(--font-primary)',
+            fontSize: 14,
+            fontWeight: 500,
+            color: 'var(--grey)',
+            cursor: 'pointer',
+            padding: '4px 8px',
+            borderRadius: 4,
+            transition: 'color 0.15s',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--horizon-red)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--grey)'; }}
+        >
+          Sign out
+        </button>
       </header>
 
       {/* Main */}

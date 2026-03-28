@@ -4,25 +4,13 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { ApolloServer } from '@apollo/server';
 import fastifyApollo, { fastifyApolloDrainPlugin } from '@as-integrations/fastify';
+import { PrismaClient } from '@prisma/client';
 import { cognitoAuthHook, buildContext } from './middleware/auth';
-import type { AuthUser } from './middleware/auth';
+import { typeDefs } from './schema/typedefs';
+import { resolvers } from './schema/resolvers';
+import { buildArenaContext, type ArenaContext } from './schema/context';
 
-export interface ArenaContext {
-  user: AuthUser | null;
-}
-
-// Minimal bootstrap schema — resolvers and types are added by later tasks
-const typeDefs = `#graphql
-  type Query {
-    _health: String
-  }
-`;
-
-const resolvers = {
-  Query: {
-    _health: () => 'ok',
-  },
-};
+const prisma = new PrismaClient();
 
 export async function buildServer() {
   const app = Fastify({
@@ -40,11 +28,9 @@ export async function buildServer() {
     origin: process.env.CORS_ORIGIN || true,
     credentials: true,
   });
-
   await app.register(helmet, {
     contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
   });
-
   await app.register(rateLimit, {
     max: 100,
     timeWindow: '1 minute',
@@ -64,7 +50,6 @@ export async function buildServer() {
     resolvers,
     plugins: [fastifyApolloDrainPlugin(app)],
     formatError: (formattedError) => {
-      // Strip stack traces in production
       if (process.env.NODE_ENV === 'production') {
         return {
           message: formattedError.message,
@@ -80,7 +65,8 @@ export async function buildServer() {
   await app.register(fastifyApollo(apollo), {
     path: '/graphql',
     context: async (request) => {
-      return { user: buildContext(request) } satisfies ArenaContext;
+      const user = buildContext(request);
+      return buildArenaContext(user, prisma);
     },
   });
 
@@ -89,7 +75,6 @@ export async function buildServer() {
 
 async function main() {
   const app = await buildServer();
-
   const host = process.env.HOST || '0.0.0.0';
   const port = parseInt(process.env.PORT || '3001', 10);
 

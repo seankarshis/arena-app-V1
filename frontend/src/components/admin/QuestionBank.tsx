@@ -10,7 +10,6 @@ import { useQuery, useMutation, gql } from '@apollo/client';
 interface Tag {
   id: string;
   label: string;
-  tagType: string;
   isActive: boolean;
 }
 
@@ -67,7 +66,6 @@ const GET_QUESTIONS = gql`
           tags {
             id
             label
-            tagType
             isActive
           }
         }
@@ -88,7 +86,6 @@ const GET_TAGS = gql`
     getTags(includeInactive: false) {
       id
       label
-      tagType
       isActive
     }
   }
@@ -108,7 +105,6 @@ const CREATE_QUESTION = gql`
       tags {
         id
         label
-        tagType
         isActive
       }
     }
@@ -137,7 +133,6 @@ const UPDATE_QUESTION = gql`
       tags {
         id
         label
-        tagType
         isActive
       }
     }
@@ -165,8 +160,8 @@ const labelStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   padding: '10px 14px',
-  borderRadius: 8,
-  border: '1px solid var(--ivory-tint)',
+  borderRadius: 6,
+  border: '1px solid var(--grey)',
   backgroundColor: 'var(--ivory-tint)',
   fontFamily: 'var(--font-primary)',
   fontSize: 14,
@@ -176,7 +171,7 @@ const inputStyle: React.CSSProperties = {
 
 const primaryBtnStyle: React.CSSProperties = {
   padding: '10px 20px',
-  borderRadius: 8,
+  borderRadius: 999,
   border: 'none',
   backgroundColor: 'var(--horizon-red)',
   color: 'var(--white)',
@@ -188,7 +183,7 @@ const primaryBtnStyle: React.CSSProperties = {
 
 const secondaryBtnStyle: React.CSSProperties = {
   padding: '10px 20px',
-  borderRadius: 8,
+  borderRadius: 999,
   border: '1px solid var(--ivory-tint)',
   backgroundColor: 'var(--white)',
   color: 'var(--graphite)',
@@ -229,13 +224,6 @@ function QuestionModal({ mode, question, allTags, onSave, onClose, isSaving, err
     e.preventDefault();
     onSave({ text: text.trim(), category: category.trim(), tagIds: selectedTagIds });
   };
-
-  // Group tags by type for cleaner multi-select layout
-  const tagsByType: Record<string, Tag[]> = {};
-  for (const tag of allTags) {
-    if (!tagsByType[tag.tagType]) tagsByType[tag.tagType] = [];
-    tagsByType[tag.tagType].push(tag);
-  }
 
   const canSubmit = text.trim().length > 0 && category.trim().length > 0;
 
@@ -323,58 +311,42 @@ function QuestionModal({ mode, question, allTags, onSave, onClose, isSaving, err
                   backgroundColor: 'var(--ivory)',
                 }}
               >
-                {Object.entries(tagsByType).map(([type, tags]) => (
-                  <div key={type} style={{ marginBottom: 14 }}>
-                    <p
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: 'var(--grey)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em',
-                        marginBottom: 8,
-                      }}
-                    >
-                      {type}
-                    </p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {tags.map((tag) => {
-                        const selected = selectedTagIds.includes(tag.id);
-                        return (
-                          <label
-                            key={tag.id}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 6,
-                              cursor: 'pointer',
-                              padding: '5px 12px',
-                              borderRadius: 999,
-                              fontSize: 13,
-                              border: selected
-                                ? '1.5px solid var(--horizon-red)'
-                                : '1.5px solid var(--ivory-tint)',
-                              backgroundColor: selected
-                                ? 'rgba(122,14,19,0.07)'
-                                : 'var(--white)',
-                              color: selected ? 'var(--horizon-red)' : 'var(--graphite)',
-                              transition: 'all 0.12s',
-                              userSelect: 'none',
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              onChange={() => toggleTag(tag.id)}
-                              style={{ display: 'none' }}
-                            />
-                            {tag.label}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {allTags.map((tag) => {
+                    const selected = selectedTagIds.includes(tag.id);
+                    return (
+                      <label
+                        key={tag.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          cursor: 'pointer',
+                          padding: '5px 12px',
+                          borderRadius: 999,
+                          fontSize: 13,
+                          border: selected
+                            ? '1.5px solid var(--horizon-red)'
+                            : '1.5px solid var(--ivory-tint)',
+                          backgroundColor: selected
+                            ? 'rgba(122,14,19,0.07)'
+                            : 'var(--white)',
+                          color: selected ? 'var(--horizon-red)' : 'var(--graphite)',
+                          transition: 'all 0.12s',
+                          userSelect: 'none',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleTag(tag.id)}
+                          style={{ display: 'none' }}
+                        />
+                        {tag.label}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -547,6 +519,10 @@ export default function QuestionBank() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
 
+  // --- Sort state (client-side) ---
+  const [sortField, setSortField] = useState<'text' | 'category' | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
   // --- Pagination: stack of 'after' cursors (null = first page) ---
   const [cursorStack, setCursorStack] = useState<Array<string | null>>([null]);
   const currentPageIndex = cursorStack.length - 1;
@@ -601,7 +577,16 @@ export default function QuestionBank() {
 
   const allTags = tagsData?.getTags ?? [];
   const connection = questionsData?.getQuestions;
-  const questions = connection?.edges.map((e) => e.node) ?? [];
+  const rawQuestions = connection?.edges.map((e) => e.node) ?? [];
+  const questions = sortField
+    ? [...rawQuestions].sort((a, b) => {
+        const aVal = a[sortField].toLowerCase();
+        const bVal = b[sortField].toLowerCase();
+        if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      })
+    : rawQuestions;
   const pageInfo = connection?.pageInfo;
   const totalCount = connection?.totalCount ?? 0;
   const pageStart = currentPageIndex * PAGE_SIZE + 1;
@@ -630,6 +615,15 @@ export default function QuestionBank() {
   const clearTagFilters = () => {
     setFilterTagIds([]);
     setCursorStack([null]);
+  };
+
+  const handleSort = (field: 'text' | 'category') => {
+    if (sortField === field) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
   };
 
   const handleIncludeInactiveToggle = () => {
@@ -735,13 +729,7 @@ export default function QuestionBank() {
   // ---------------------------------------------------------------------------
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        backgroundColor: 'var(--ivory)',
-        fontFamily: 'var(--font-primary)',
-      }}
-    >
+    <>
       {/* ---- Page header ---- */}
       <header
         style={{
@@ -910,16 +898,6 @@ export default function QuestionBank() {
                           }}
                         />
                         <span style={{ flex: 1 }}>{tag.label}</span>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: 'var(--grey)',
-                            fontStyle: 'italic',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {tag.tagType}
-                        </span>
                       </label>
                     ))}
                   </>
@@ -1062,20 +1040,28 @@ export default function QuestionBank() {
                   gap: 12,
                 }}
               >
-                {['Question', 'Category', 'Tags', 'Status', 'Action'].map((h) => (
-                  <span
-                    key={h}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: 'var(--grey)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.07em',
-                    }}
-                  >
-                    {h}
-                  </span>
-                ))}
+                {(['Question', 'Category', 'Tags', 'Status', 'Action'] as const).map((h) => {
+                  const field = h === 'Question' ? 'text' : h === 'Category' ? 'category' : null;
+                  const isSorted = field && sortField === field;
+                  const arrow = isSorted ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+                  return (
+                    <span
+                      key={h}
+                      onClick={field ? () => handleSort(field) : undefined}
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: isSorted ? 'var(--graphite)' : 'var(--grey)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.07em',
+                        cursor: field ? 'pointer' : 'default',
+                        userSelect: 'none',
+                      }}
+                    >
+                      {h}{arrow}
+                    </span>
+                  );
+                })}
               </div>
 
               {/* Rows */}
@@ -1257,6 +1243,6 @@ export default function QuestionBank() {
           isLoading={updating}
         />
       )}
-    </div>
+    </>
   );
 }

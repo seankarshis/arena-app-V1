@@ -10,7 +10,6 @@ datasource db {
 model Tag {
   id        String   @id @default(uuid()) @db.Uuid
   label     String   @unique @db.VarChar(255)
-  tagType   String   @map("tag_type") @db.VarChar(50)
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -18,7 +17,7 @@ model Tag {
   questionTags QuestionTag[]
   userTags     UserTag[]
 
-  @@index([tagType, isActive], name: "idx_tags_tag_type_is_active")
+  @@index([isActive], name: "idx_tags_is_active")
   @@map("tags")
 }
 

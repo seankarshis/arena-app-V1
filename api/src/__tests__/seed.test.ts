@@ -70,14 +70,6 @@ describe('Seed: Tags', () => {
     expect(inactive).toBe(0)
   })
 
-  it('uses only valid tag_type values', async () => {
-    const validTypes = ['role', 'department', 'topic', 'seniority', 'domain']
-    const tags = await prisma.tag.findMany()
-    for (const tag of tags) {
-      expect(validTypes).toContain(tag.tagType)
-    }
-  })
-
   it('all tag labels are unique', async () => {
     const tags = await prisma.tag.findMany()
     const labels = tags.map((t) => t.label)

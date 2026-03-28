@@ -11,7 +11,6 @@ import TriggerEditor, { type FollowupTrigger } from './TriggerEditor';
 interface Tag {
   id: string;
   label: string;
-  tagType: string;
 }
 
 interface Question {
@@ -86,7 +85,7 @@ const GET_TEMPLATE = gql`
           id
           text
           category
-          tags { id label tagType }
+          tags { id label }
         }
       }
     }
@@ -122,7 +121,7 @@ const GET_ACTIVE_QUESTIONS = gql`
           id
           text
           category
-          tags { id label tagType }
+          tags { id label }
         }
       }
       pageInfo { hasNextPage endCursor }
@@ -153,7 +152,7 @@ const ADD_QUESTION = gql`
       categoryBucket
       isRequired
       followupTriggers
-      question { id text category tags { id label tagType } }
+      question { id text category tags { id label } }
     }
   }
 `;
@@ -182,9 +181,30 @@ const UPDATE_TQ = gql`
   }
 `;
 
+const REORDER_TQS = gql`
+  mutation BuilderReorderTQs($templateId: ID!, $orderedIds: [ID!]!) {
+    reorderTemplateQuestions(templateId: $templateId, orderedIds: $orderedIds) {
+      id
+      sequenceOrder
+    }
+  }
+`;
+
 const REMOVE_QUESTION = gql`
   mutation BuilderRemoveQuestion($id: ID!) {
     removeQuestionFromTemplate(id: $id)
+  }
+`;
+
+const CREATE_QUESTION = gql`
+  mutation BuilderCreateQuestion($text: String!, $category: String!) {
+    createQuestion(text: $text, category: $category) {
+      id
+      text
+      category
+      isActive
+      tags { id label }
+    }
   }
 `;
 
@@ -357,6 +377,8 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
 
   // Synced questions
   const [localQuestions, setLocalQuestions] = useState<TemplateQuestion[]>([]);
+  const localQuestionsRef = useRef(localQuestions);
+  localQuestionsRef.current = localQuestions;
 
   // Step 2: drag-and-drop
   const draggedIdxRef = useRef<number | null>(null);
@@ -375,6 +397,9 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   // Step 4: trigger editor
   const [openTriggerFor, setOpenTriggerFor] = useState<string | null>(null);
   const [savingTriggersFor, setSavingTriggersFor] = useState<string | null>(null);
+  const [triggerBankDebouncedSearch, setTriggerBankDebouncedSearch] = useState('');
+  const triggerBankSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [addingExternalQuestion, setAddingExternalQuestion] = useState(false);
 
   // Step 5: toggling required
   const [togglingRequired, setTogglingRequired] = useState<string | null>(null);
@@ -413,6 +438,18 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     fetchPolicy: 'cache-and-network',
   });
 
+  // Step 4: question bank search for trigger targets
+  const { data: triggerBankData, loading: triggerBankLoading } = useQuery<{
+    getQuestions: QuestionConnection;
+  }>(GET_ACTIVE_QUESTIONS, {
+    skip: currentStep !== 4 || !triggerBankDebouncedSearch,
+    variables: {
+      first: 10,
+      filters: { searchText: triggerBankDebouncedSearch },
+    },
+    fetchPolicy: 'cache-and-network',
+  });
+
   // ---------------------------------------------------------------------------
   // Mutations
   // ---------------------------------------------------------------------------
@@ -420,7 +457,9 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   const [updateTemplate, { loading: updatingTemplate }] = useMutation(UPDATE_TEMPLATE);
   const [addQuestion, { loading: addingQuestion }] = useMutation(ADD_QUESTION);
   const [updateTQ] = useMutation(UPDATE_TQ);
+  const [reorderTQs] = useMutation(REORDER_TQS);
   const [removeQuestion] = useMutation(REMOVE_QUESTION);
+  const [createQuestion, { loading: creatingQuestion }] = useMutation(CREATE_QUESTION);
 
   // ---------------------------------------------------------------------------
   // Sync from API
@@ -542,11 +581,12 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
 
     setIsSavingOrder(true);
     try {
-      await Promise.all(
-        reordered.map((tq, i) =>
-          updateTQ({ variables: { id: tq.id, sequenceOrder: i + 1 } })
-        )
-      );
+      await reorderTQs({
+        variables: {
+          templateId,
+          orderedIds: reordered.map((tq) => tq.id),
+        },
+      });
     } catch (err) {
       setPageError((err as Error).message);
       void refetchTemplate();
@@ -595,11 +635,100 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
       setLocalQuestions((prev) =>
         prev.map((q) => (q.id === tqId ? { ...q, followupTriggers: triggers } : q))
       );
-      setOpenTriggerFor(null);
     } catch (err) {
       setPageError((err as Error).message);
     } finally {
       setSavingTriggersFor(null);
+    }
+  };
+
+  const handleTriggerBankSearch = (searchText: string) => {
+    if (triggerBankSearchTimer.current) clearTimeout(triggerBankSearchTimer.current);
+    triggerBankSearchTimer.current = setTimeout(() => {
+      setTriggerBankDebouncedSearch(searchText);
+    }, 300);
+  };
+
+  const handleSelectBankQuestion = async (
+    question: { id: string; text: string; category: string },
+  ): Promise<string | null> => {
+    // Use ref to read latest state (avoids stale closure after create)
+    const current = localQuestionsRef.current;
+
+    // Already in template? Return existing TQ id
+    const existingTQ = current.find((tq) => tq.question.id === question.id);
+    if (existingTQ) return existingTQ.id;
+
+    // Add to template as optional
+    setAddingExternalQuestion(true);
+    try {
+      const result = await addQuestion({
+        variables: {
+          templateId,
+          questionId: question.id,
+          sequenceOrder: current.length + 1,
+          categoryBucket: question.category,
+          isRequired: false,
+          followupTriggers: [],
+        },
+      });
+      const newTQ = result.data.addQuestionToTemplate;
+      setLocalQuestions((prev) => [
+        ...prev,
+        {
+          id: newTQ.id,
+          question: { id: question.id, text: question.text, category: question.category, tags: [] },
+          sequenceOrder: prev.length + 1,
+          categoryBucket: question.category,
+          isRequired: false,
+          followupTriggers: parseTriggers(newTQ.followupTriggers),
+        },
+      ]);
+      return newTQ.id;
+    } catch (err) {
+      setPageError((err as Error).message);
+      return null;
+    } finally {
+      setAddingExternalQuestion(false);
+    }
+  };
+
+  const handleCreateQuestionForTrigger = async (
+    data: { text: string; category: string },
+  ): Promise<string | null> => {
+    try {
+      const createResult = await createQuestion({
+        variables: { text: data.text, category: data.category },
+      });
+      const newQ = createResult.data.createQuestion;
+      const current = localQuestionsRef.current;
+
+      const addResult = await addQuestion({
+        variables: {
+          templateId,
+          questionId: newQ.id,
+          sequenceOrder: current.length + 1,
+          categoryBucket: data.category,
+          isRequired: false,
+          followupTriggers: [],
+        },
+      });
+      const newTQ = addResult.data.addQuestionToTemplate;
+      setLocalQuestions((prev) => [
+        ...prev,
+        {
+          id: newTQ.id,
+          question: { id: newQ.id, text: newQ.text, category: newQ.category, tags: newQ.tags ?? [] },
+          sequenceOrder: prev.length + 1,
+          categoryBucket: data.category,
+          isRequired: false,
+          followupTriggers: [],
+        },
+      ]);
+      return newTQ.id;
+    } catch (err) {
+      setPageError((err as Error).message);
+      return null;
     }
   };
 
@@ -1236,8 +1365,20 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
                       onSave={(triggers) =>
                         void handleSaveTriggers(tq.id, triggers)
                       }
-                      onClose={() => setOpenTriggerFor(null)}
-                      isSaving={isSavingThis}
+                      bankResults={
+                        triggerBankData?.getQuestions?.edges.map((e) => ({
+                          id: e.node.id,
+                          text: e.node.text,
+                          category: e.node.category,
+                        })) ?? []
+                      }
+                      bankLoading={triggerBankLoading}
+                      onBankSearch={handleTriggerBankSearch}
+                      onSelectBankQuestion={handleSelectBankQuestion}
+                      onCreateQuestion={handleCreateQuestionForTrigger}
+                      addingExternalQuestion={addingExternalQuestion}
+                      creatingQuestion={creatingQuestion}
+                      templateQuestionIds={addedQuestionIds}
                     />
                   </div>
                 )}
