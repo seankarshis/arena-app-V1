@@ -1,6 +1,7 @@
 import type { SQSEvent, SQSHandler } from 'aws-lambda';
 import { PrismaClient } from '@prisma/client';
 import pino from 'pino';
+import { clickHouseWrite } from '../observability/clickhouseWriter';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -114,6 +115,14 @@ export async function processInterview(
         },
         'Response cleaned successfully',
       );
+      clickHouseWrite('cleaning_metrics', {
+        responseId: response.id,
+        interviewId,
+        model: cleanResult.model,
+        promptTokens: cleanResult.promptTokens,
+        completionTokens: cleanResult.completionTokens,
+        status: 'cleaned',
+      });
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Unknown cleaning error';
@@ -142,11 +151,24 @@ export async function processInterview(
         { responseId: response.id, errorMessage },
         'CLEANING_PIPELINE_ERROR',
       );
+      clickHouseWrite('cleaning_metrics', {
+        responseId: response.id,
+        interviewId,
+        status: 'error',
+      });
     }
   }
 
   const errorCount = results.filter((r) => r.status === 'error').length;
   const errorRate = errorCount / results.length;
+
+  clickHouseWrite('cleaning_summary', {
+    interviewId,
+    totalResponses: results.length,
+    cleanedCount: results.length - errorCount,
+    errorCount,
+    errorRate,
+  });
   if (errorRate > 0.1) {
     logger.error(
       {

@@ -21,6 +21,7 @@ import {
   consentRequired,
   forbidden,
 } from '../middleware/errors';
+import { clickHouseWrite } from '../observability/clickhouseWriter';
 
 // ---------------------------------------------------------------------------
 // Required consent types that must be granted before starting an interview
@@ -139,6 +140,14 @@ export async function startInterview(
 
   await createSession(session);
 
+  clickHouseWrite('interview_lifecycle', {
+    interviewId: interview.id,
+    templateId,
+    event: 'started',
+    requiredQuestionCount: requiredQuestionIds.length,
+    optionalQuestionCount: optionalQuestionIds.length,
+  });
+
   return {
     id: interview.id,
     userId: interview.userId,
@@ -185,6 +194,12 @@ export async function abandonInterview(
   } catch {
     // Session TTL will expire naturally
   }
+
+  clickHouseWrite('interview_lifecycle', {
+    interviewId,
+    templateId: interview.templateId,
+    event: 'abandoned',
+  });
 
   return {
     id: updated.id,

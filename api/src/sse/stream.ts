@@ -15,6 +15,7 @@ import {
   type PromptQuestion,
 } from '../services/promptConstructor';
 import { applyQuestionAsked, type FollowupTrigger } from '../services/stateManager';
+import { clickHouseWrite } from '../observability/clickhouseWriter';
 
 // ===========================================================================
 // Sentence boundary detection
@@ -346,6 +347,17 @@ export async function streamLlmToSSE(
   };
   conn.send(completeEvent);
 
+  clickHouseWrite('llm_turns', {
+    interviewId: params.interviewId,
+    questionId: params.questionId ?? '',
+    sequenceNumber: params.sequenceNumber,
+    isFollowup: params.isFollowup,
+    model: result.model,
+    promptTokens: result.promptTokens,
+    completionTokens: result.completionTokens,
+    latencyMs: result.latencyMs,
+  });
+
   return result;
 }
 
@@ -402,6 +414,9 @@ async function triggerFirstQuestion(
 
     log.info({ interviewId, templateId: session.templateId, questionCount: templateQuestions.length, nextQuestionId: session.requiredRemaining[0] ?? session.optionalRemaining[0] ?? null }, '[SSE] triggerFirstQuestion: template loaded');
 
+    // Build lookup from TemplateQuestion ID → Question ID for trigger resolution
+    const tqIdToQuestionId = new Map(templateQuestions.map((tq) => [tq.id, tq.questionId]));
+
     const questions: PromptQuestion[] = templateQuestions.map((tq) => ({
       questionId: tq.questionId,
       text: tq.question.text,
@@ -409,16 +424,28 @@ async function triggerFirstQuestion(
       isRequired: tq.isRequired,
       sequenceOrder: tq.sequenceOrder,
       followupTriggers: (
-        (Array.isArray(tq.followupTriggers) ? tq.followupTriggers : []) as unknown as FollowupTrigger[]
-      ).map((t) => ({
-        condition: t.condition,
-        followupQuestionId: t.followupQuestionId,
-      })),
+        (Array.isArray(tq.followupTriggers) ? tq.followupTriggers : []) as any[]
+      ).flatMap((t: any): FollowupTrigger[] => {
+        const condition = t.lengthDescription ?? t.condition ?? '';
+        // New format: targetTemplateQuestionIds (TQ IDs → resolve to Question IDs)
+        if (Array.isArray(t.targetTemplateQuestionIds)) {
+          return t.targetTemplateQuestionIds
+            .map((tqId: string) => tqIdToQuestionId.get(tqId))
+            .filter((qId: string | undefined): qId is string => !!qId)
+            .map((followupQuestionId: string) => ({ condition, followupQuestionId }));
+        }
+        // Legacy format: followupQuestionId directly
+        if (t.followupQuestionId) {
+          return [{ condition, followupQuestionId: t.followupQuestionId }];
+        }
+        return [];
+      }),
     }));
 
     const promptData: PromptTemplateData = {
       name: template.name,
       description: template.description,
+      systemPrompt: template.systemPrompt,
       questions,
     };
     const systemPrompt = buildSystemPrompt(promptData);

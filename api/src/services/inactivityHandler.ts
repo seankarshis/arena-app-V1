@@ -5,6 +5,7 @@
 
 import pino from 'pino';
 import type { FastifyPluginAsync } from 'fastify';
+import { clickHouseWrite } from '../observability/clickhouseWriter';
 
 const log = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 import type { PrismaClient } from '@prisma/client';
@@ -228,6 +229,11 @@ async function triggerAutoPause(
 
   try {
     await pauseInterview(prisma, userId, interviewId);
+    clickHouseWrite('interview_lifecycle', {
+      interviewId,
+      event: 'auto_paused',
+      reason,
+    });
   } catch (err) {
     log.error({ interviewId, reason, err: err instanceof Error ? err.message : String(err) }, '[InactivityHandler] Failed to auto-pause interview');
   }
