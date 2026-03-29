@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type KeyboardEvent } from 'react';
+import { useState, useRef, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import type {
   InterviewState,
@@ -48,6 +48,14 @@ function LoadingScreen({ message }: { message: string }) {
 export default function InterviewUI({ state, session, actions }: Props) {
   const router = useRouter();
   const [inputText, setInputText] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const finalThoughtRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputText(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = `${e.target.scrollHeight}px`;
+  };
 
   // ---- Event handlers ----
 
@@ -55,10 +63,13 @@ export default function InterviewUI({ state, session, actions }: Props) {
     const text = inputText.trim();
     if (!text) return;
     setInputText('');
+    // Reset heights after clearing
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    if (finalThoughtRef.current) finalThoughtRef.current.style.height = 'auto';
     await actions.submitText(text);
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void handleSend();
@@ -556,13 +567,14 @@ export default function InterviewUI({ state, session, actions }: Props) {
         {isCompleting ? (
           /* COMPLETING: show optional final-thought input + primary Finish button */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <input
-                type="text"
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+              <textarea
+                ref={finalThoughtRef}
                 value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                onChange={handleTextChange}
                 onKeyDown={handleKeyDown}
                 placeholder="Add a final thought (optional)…"
+                rows={1}
                 style={{
                   flex: 1,
                   padding: '12px 16px',
@@ -573,6 +585,9 @@ export default function InterviewUI({ state, session, actions }: Props) {
                   fontSize: 16,
                   color: 'var(--graphite)',
                   outline: 'none',
+                  resize: 'none',
+                  overflow: 'hidden',
+                  lineHeight: '1.5',
                 }}
               />
               {inputText.trim() && (
@@ -615,14 +630,15 @@ export default function InterviewUI({ state, session, actions }: Props) {
           </div>
         ) : (
           /* Normal input row */
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <input
-              type="text"
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <textarea
+              ref={textareaRef}
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={handleTextChange}
               onKeyDown={handleKeyDown}
               disabled={!isInputEnabled}
               placeholder={isInputEnabled ? 'Type your response…' : 'Waiting…'}
+              rows={1}
               style={{
                 flex: 1,
                 padding: '12px 16px',
@@ -637,6 +653,9 @@ export default function InterviewUI({ state, session, actions }: Props) {
                 outline: 'none',
                 cursor: isInputEnabled ? 'text' : 'not-allowed',
                 opacity: isInputEnabled ? 1 : 0.6,
+                resize: 'none',
+                overflow: 'hidden',
+                lineHeight: '1.5',
               }}
             />
             <button
