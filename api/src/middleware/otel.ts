@@ -141,10 +141,18 @@ let sdk: NodeSDK | null = null;
 export function initTelemetry(): NodeSDK {
   if (sdk) return sdk;
 
+  const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  const chUser = process.env.CLICKHOUSE_USER;
+  const chPassword = process.env.CLICKHOUSE_PASSWORD;
+
   const traceExporter = new OTLPTraceExporter({
-    url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT
-      ? `${process.env.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces`
-      : undefined,
+    url: endpoint ? `${endpoint}/v1/traces` : undefined,
+    headers:
+      chUser && chPassword
+        ? {
+            Authorization: `Basic ${Buffer.from(`${chUser}:${chPassword}`).toString('base64')}`,
+          }
+        : undefined,
   });
 
   const batchProcessor = new BatchSpanProcessor(traceExporter);
