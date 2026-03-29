@@ -16,17 +16,9 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
         run: |
-          if [ -z "$EC2_SSH_KEY" ] || [ -z "$EC2_HOST" ] || [ -z "$EC2_USERNAME" ]; then
-            echo "Error: One or more required secrets are not set"
-            exit 1
-          fi
-
           mkdir -p ~/.ssh
-          echo "$EC2_SSH_KEY" > ~/.ssh/id_rsa
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          ssh -v -i ~/.ssh/id_rsa "$EC2_USERNAME@$EC2_HOST" "cd /home/ubuntu/arena-app/app-v1 && git pull && npm install && pm2 restart arena-ai"
-
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa "$EC2_USERNAME@$EC2_HOST" "cd /home/ubuntu/arena-app/app-v1 && git pull && npm install && pm2 restart arena-ai"
           rm -f ~/.ssh/id_rsa
