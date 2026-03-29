@@ -18,9 +18,5 @@ jobs:
         run: |
           echo "$EC2_SSH_KEY" > key.pem
           chmod 600 key.pem
-          ssh -o StrictHostKeyChecking=no -i key.pem $EC2_USERNAME@$EC2_HOST "\
-            cd /home/ubuntu/arena-app/app-v1 && \
-            git pull && \
-            npm install && \
-            pm2 restart arena-ai"
+          ssh -o StrictHostKeyChecking=no -i key.pem "$EC2_USERNAME@$EC2_HOST" "cd /home/ubuntu/arena-app/app-v1 && git pull && npm install && pm2 restart arena-ai"
           rm -f key.pem
