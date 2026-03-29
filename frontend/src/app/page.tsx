@@ -146,7 +146,7 @@ export default function HomePage() {
             color: 'var(--graphite)',
           }}
         >
-          Arena
+          ARENA AI
         </h1>
         <span style={{ color: 'var(--grey)', fontSize: 14 }}>
           elastichorizon
