@@ -20,5 +20,5 @@ jobs:
           printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa "$EC2_USERNAME@$EC2_HOST" "cd /home/ubuntu/arena-app/app-v1 && git pull && npm install && pm2 restart arena-ai"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa "$EC2_USERNAME@$EC2_HOST" "cd /home/ubuntu/arena-app/app-v1 && git pull && cd api && npm install && cd ../frontend && npm install && npm run build && cd .. && pm2 restart arena-api && pm2 restart arena-frontend"
           rm -f ~/.ssh/id_rsa
