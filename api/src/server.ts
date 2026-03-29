@@ -81,7 +81,7 @@ export async function buildServer() {
 }
 
 async function main() {
-  validateObservabilityConfig();
+  await validateObservabilityConfig();
   const app = await buildServer();
   const host = process.env.HOST || '0.0.0.0';
   const port = parseInt(process.env.PORT || '3001', 10);
