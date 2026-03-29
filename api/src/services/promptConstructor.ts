@@ -23,6 +23,7 @@ export interface PromptQuestion {
 export interface PromptTemplateData {
   name: string;
   description: string | null;
+  systemPrompt: string | null;
   questions: PromptQuestion[];
 }
 
@@ -94,17 +95,20 @@ export function buildSystemPrompt(template: PromptTemplateData): string {
 
   const sections: string[] = [];
 
-  // Header
-  sections.push('You are conducting a structured research interview.');
-  sections.push('');
-
-  // Context
-  sections.push('## Interview Context');
-  sections.push(`Template: ${template.name}`);
-  if (template.description) {
-    sections.push(`Description: ${template.description}`);
+  // Header / system prompt
+  if (template.systemPrompt) {
+    sections.push(template.systemPrompt);
+    sections.push('');
+  } else {
+    sections.push('You are conducting a structured research interview.');
+    sections.push('');
+    sections.push('## Interview Context');
+    sections.push(`Template: ${template.name}`);
+    if (template.description) {
+      sections.push(`Description: ${template.description}`);
+    }
+    sections.push('');
   }
-  sections.push('');
 
   // Required questions by bucket
   sections.push('## Required Questions');

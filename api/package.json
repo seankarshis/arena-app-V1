@@ -17,6 +17,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed:clean": "SEED_MODE=clean tsx prisma/seed.ts",
+    "prisma:seed:provenance": "tsx prisma/seed-provenance.ts",
+    "prisma:seed:provenance:clean": "SEED_MODE=clean tsx prisma/seed-provenance.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

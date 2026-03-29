@@ -3,7 +3,10 @@
 // Idle timer, idle_prompt SSE events, heartbeat, and auto-pause.
 // ---------------------------------------------------------------------------
 
+import pino from 'pino';
 import type { FastifyPluginAsync } from 'fastify';
+
+const log = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 import type { PrismaClient } from '@prisma/client';
 import type { SSEConnection, StreamingLlmClient } from '../sse/stream';
 import { getSession, updateSession, type InterviewSession } from './session';
@@ -206,11 +209,7 @@ async function triggerIdlePrompt(
       });
     }
   } catch (err) {
-    console.error(
-      '[InactivityHandler] Failed to generate idle prompt for interview %s: %o',
-      interviewId,
-      err,
-    );
+    log.error({ interviewId, err: err instanceof Error ? err.message : String(err) }, '[InactivityHandler] Failed to generate idle prompt');
   }
 }
 
@@ -230,12 +229,7 @@ async function triggerAutoPause(
   try {
     await pauseInterview(prisma, userId, interviewId);
   } catch (err) {
-    console.error(
-      '[InactivityHandler] Failed to auto-pause interview %s (%s): %o',
-      interviewId,
-      reason,
-      err,
-    );
+    log.error({ interviewId, reason, err: err instanceof Error ? err.message : String(err) }, '[InactivityHandler] Failed to auto-pause interview');
   }
 }
 
@@ -267,11 +261,7 @@ async function onHeartbeatTimeout(interviewId: string): Promise<void> {
     try {
       await pauseInterview(state.prisma, session.userId, interviewId);
     } catch (err) {
-      console.error(
-        '[InactivityHandler] Failed to auto-pause interview %s (heartbeat timeout, no SSE conn): %o',
-        interviewId,
-        err,
-      );
+      log.error({ interviewId, err: err instanceof Error ? err.message : String(err) }, '[InactivityHandler] Failed to auto-pause interview (heartbeat timeout, no SSE conn)');
     }
   }
 

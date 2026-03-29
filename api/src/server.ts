@@ -1,3 +1,6 @@
+// MUST be first import — starts OTel SDK before Fastify/Prisma/HTTP modules load
+import './instrumentation';
+import { validateObservabilityConfig } from './observability/validateConfig';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -78,6 +81,7 @@ export async function buildServer() {
 }
 
 async function main() {
+  validateObservabilityConfig();
   const app = await buildServer();
   const host = process.env.HOST || '0.0.0.0';
   const port = parseInt(process.env.PORT || '3001', 10);

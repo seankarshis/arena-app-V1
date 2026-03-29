@@ -467,7 +467,7 @@ export default function TriggerEditor({
                     }}
                   >
                     {mergedTargets.map((target) => {
-                      const selected = trigger.targetTemplateQuestionIds.includes(
+                      const selected = (trigger.targetTemplateQuestionIds ?? []).includes(
                         target.id
                       );
                       return (

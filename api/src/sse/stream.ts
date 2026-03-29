@@ -2,7 +2,7 @@
 // Arena SSE Stream — GET /api/interview/:id/stream, GET /api/tts-token
 // ---------------------------------------------------------------------------
 
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyBaseLogger } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import {
   getSession,
@@ -104,10 +104,6 @@ export class SentenceBoundaryDetector {
         this.buffer = this.buffer.slice(cutPoint).replace(/^\s+/, '');
 
         if (sentence) {
-          console.warn(
-            '[SSE] Fallback sentence split at %d chars — possible missing abbreviation.',
-            cutPoint,
-          );
           events.push({ type: 'sentence_complete', sentence, sentenceIndex: this.sentenceIndex++ });
         }
       }
@@ -368,15 +364,16 @@ async function triggerFirstQuestion(
   interviewId: string,
   prisma: PrismaClient,
   apiKey: string,
+  log: FastifyBaseLogger,
 ): Promise<void> {
-  console.log('[SSE] triggerFirstQuestion start interviewId=%s', interviewId);
+  log.info({ interviewId }, '[SSE] triggerFirstQuestion start');
   const session = await getSession(interviewId);
   if (!session) {
-    console.warn('[SSE] triggerFirstQuestion: no Redis session found for interviewId=%s', interviewId);
+    log.warn({ interviewId }, '[SSE] triggerFirstQuestion: no Redis session found');
     return;
   }
   if (session.isStreaming || session.conversationHistory.length > 0) {
-    console.log('[SSE] triggerFirstQuestion: skipping — isStreaming=%s historyLen=%d', session.isStreaming, session.conversationHistory.length);
+    log.info({ interviewId, isStreaming: session.isStreaming, historyLen: session.conversationHistory.length }, '[SSE] triggerFirstQuestion: skipping');
     return;
   }
 
@@ -398,12 +395,12 @@ async function triggerFirstQuestion(
     ]);
 
     if (!template) {
-      console.error('[SSE] triggerFirstQuestion: template not found for templateId=%s', session.templateId);
+      log.error({ interviewId, templateId: session.templateId }, '[SSE] triggerFirstQuestion: template not found');
       await updateSession(interviewId, { isStreaming: false, currentTurnLlmText: null });
       return;
     }
 
-    console.log('[SSE] triggerFirstQuestion: template=%s questions=%d nextQuestionId=%s', template.name, templateQuestions.length, session.requiredRemaining[0] ?? session.optionalRemaining[0] ?? null);
+    log.info({ interviewId, templateId: session.templateId, questionCount: templateQuestions.length, nextQuestionId: session.requiredRemaining[0] ?? session.optionalRemaining[0] ?? null }, '[SSE] triggerFirstQuestion: template loaded');
 
     const questions: PromptQuestion[] = templateQuestions.map((tq) => ({
       questionId: tq.questionId,
@@ -431,7 +428,7 @@ async function triggerFirstQuestion(
       ? templateQuestions.find((tq) => tq.questionId === nextQuestionId)
       : null;
 
-    console.log('[SSE] triggerFirstQuestion: calling LLM for interviewId=%s', interviewId);
+    log.info({ interviewId }, '[SSE] triggerFirstQuestion: calling LLM');
     const client = createStreamingClaudeClient(apiKey);
     const result = await streamLlmToSSE(client, {
       interviewId,
@@ -461,10 +458,9 @@ async function triggerFirstQuestion(
       conversationHistory: [assistantEntry],
       ...questionAskedPatch,
     });
-    console.log('[SSE] triggerFirstQuestion: LLM done for interviewId=%s tokens=%d', interviewId, result.completionTokens);
+    log.info({ interviewId, completionTokens: result.completionTokens }, '[SSE] triggerFirstQuestion: LLM done');
   } catch (err) {
-    console.error('[SSE] triggerFirstQuestion error for interviewId=%s: %s', interviewId, err instanceof Error ? err.message : err);
-    if (err instanceof Error && err.stack) console.error(err.stack);
+    log.error({ interviewId, err: err instanceof Error ? err.message : String(err) }, '[SSE] triggerFirstQuestion error');
     await updateSession(interviewId, { isStreaming: false, currentTurnLlmText: null });
   }
 }
@@ -680,7 +676,7 @@ export const ssePlugin: FastifyPluginAsync<SSEPluginOptions> = async (app, opts)
             request.log.error('[SSE] CLAUDE_API_KEY is not set — cannot trigger first question for interviewId=%s', interviewId);
           } else {
             request.log.info('[SSE] Triggering first question for interviewId=%s', interviewId);
-            void triggerFirstQuestion(interviewId, prisma, apiKey);
+            void triggerFirstQuestion(interviewId, prisma, apiKey, app.log);
           }
         } else if (session.currentTurnLlmText && !session.isStreaming) {
           // Reconnect or resume — replay the last LLM turn to the new connection

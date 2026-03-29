@@ -58,6 +58,7 @@ export const typeDefs = `#graphql
     id: ID!
     name: String!
     description: String
+    systemPrompt: String
     status: String!
     questions: [TemplateQuestion!]!
   }
@@ -414,11 +415,12 @@ export const typeDefs = `#graphql
     ): Question!
 
     # --- Template management (admin only) ---
-    createTemplate(name: String!, description: String): InterviewTemplate!
+    createTemplate(name: String!, description: String, systemPrompt: String): InterviewTemplate!
     updateTemplate(
       id: ID!
       name: String
       description: String
+      systemPrompt: String
       status: String
     ): InterviewTemplate!
     addQuestionToTemplate(

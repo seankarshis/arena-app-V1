@@ -488,12 +488,12 @@ export const resolvers = {
 
     async createTemplate(
       _parent: unknown,
-      args: { name: string; description?: string | null },
+      args: { name: string; description?: string | null; systemPrompt?: string | null },
       ctx: ArenaContext,
     ) {
       requireAdmin(ctx);
       return ctx.prisma.interviewTemplate.create({
-        data: { name: args.name, description: args.description ?? null, status: 'draft' },
+        data: { name: args.name, description: args.description ?? null, systemPrompt: args.systemPrompt ?? null, status: 'draft' },
       });
     },
 
@@ -503,6 +503,7 @@ export const resolvers = {
         id: string;
         name?: string | null;
         description?: string | null;
+        systemPrompt?: string | null;
         status?: string | null;
       },
       ctx: ArenaContext,
@@ -525,6 +526,7 @@ export const resolvers = {
       const data: Record<string, unknown> = {};
       if (args.name != null) data.name = args.name;
       if (args.description !== undefined) data.description = args.description;
+      if (args.systemPrompt !== undefined) data.systemPrompt = args.systemPrompt;
       if (args.status != null) data.status = args.status;
 
       return ctx.prisma.interviewTemplate.update({ where: { id: args.id }, data });
@@ -913,7 +915,7 @@ export const resolvers = {
       ctx: ArenaContext,
     ) {
       requireAuth(ctx);
-      console.log('[resolver] startInterview userId=%s templateId=%s', ctx.user!.userId, args.templateId);
+      console.log('[resolver] startInterview templateId=%s', args.templateId);
       try {
         const result = await startInterviewService(ctx.prisma, ctx.user!.userId, args.templateId);
         console.log('[resolver] startInterview success interviewId=%s', result.id);

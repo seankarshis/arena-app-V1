@@ -118,8 +118,9 @@ model TemplateAssignmentHistory {
 model InterviewTemplate {
   id          String   @id @default(uuid()) @db.Uuid
   name        String   @db.VarChar(255)
-  description String?  @db.Text
-  status      String   @default("draft") @db.VarChar(20)
+  description  String?  @db.Text
+  systemPrompt String?  @db.Text @map("system_prompt")
+  status       String   @default("draft") @db.VarChar(20)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 

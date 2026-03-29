@@ -147,7 +147,7 @@ export function createUserByIdLoader(prisma: PrismaClient) {
  * Used when resolving `Interview.template` or `UserTemplateAssignment.template`.
  */
 export function createTemplateByIdLoader(prisma: PrismaClient) {
-  return new DataLoader<string, { id: string; name: string; description: string | null; status: string } | null>(
+  return new DataLoader<string, { id: string; name: string; description: string | null; systemPrompt: string | null; status: string } | null>(
     async (ids) => {
       const templates = await prisma.interviewTemplate.findMany({
         where: { id: { in: [...ids] } },

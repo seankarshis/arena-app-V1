@@ -1,3 +1,4 @@
+import pino from 'pino';
 import { PrismaClient, Prisma } from '@prisma/client';
 import {
   CognitoIdentityProviderClient,
@@ -8,6 +9,7 @@ import type {
   CognitoUserPoolTriggerHandler,
 } from 'aws-lambda';
 
+const log = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 const prisma = new PrismaClient();
 const cognito = new CognitoIdentityProviderClient({});
 
@@ -24,10 +26,7 @@ export const handler: CognitoUserPoolTriggerHandler = async (
     const email = attrs.email;
 
     if (!sub || !email) {
-      console.error('user-sync-handler: missing required attributes', {
-        hasSub: !!sub,
-        hasEmail: !!email,
-      });
+      log.error({ hasSub: !!sub, hasEmail: !!email }, 'user-sync-handler: missing required attributes');
       return event;
     }
 
@@ -47,10 +46,7 @@ export const handler: CognitoUserPoolTriggerHandler = async (
         role = 'admin';
       }
     } catch (groupErr) {
-      console.error(
-        'user-sync-handler: failed to fetch groups, defaulting to user role',
-        groupErr,
-      );
+      log.error({ err: groupErr instanceof Error ? groupErr.message : String(groupErr) }, 'user-sync-handler: failed to fetch groups, defaulting to user role');
     }
 
     // Insert user row; skip silently if already exists (idempotency)
@@ -66,7 +62,7 @@ export const handler: CognitoUserPoolTriggerHandler = async (
       return event;
     }
     // Log but do not block Cognito confirmation
-    console.error('user-sync-handler: unexpected error', err);
+    log.error({ err: err instanceof Error ? err.message : String(err) }, 'user-sync-handler: unexpected error');
   }
 
   return event;

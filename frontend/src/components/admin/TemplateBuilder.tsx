@@ -34,6 +34,7 @@ interface RawInterviewTemplate {
   id: string;
   name: string;
   description: string | null;
+  systemPrompt: string | null;
   status: string;
   questions: RawTemplateQuestion[];
 }
@@ -74,6 +75,7 @@ const GET_TEMPLATE = gql`
       id
       name
       description
+      systemPrompt
       status
       questions {
         id
@@ -97,12 +99,14 @@ const UPDATE_TEMPLATE = gql`
     $id: ID!
     $name: String
     $description: String
+    $systemPrompt: String
     $status: String
   ) {
-    updateTemplate(id: $id, name: $name, description: $description, status: $status) {
+    updateTemplate(id: $id, name: $name, description: $description, systemPrompt: $systemPrompt, status: $status) {
       id
       name
       description
+      systemPrompt
       status
     }
   }
@@ -372,6 +376,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   // Step 1: template info
   const [localName, setLocalName] = useState('');
   const [localDescription, setLocalDescription] = useState('');
+  const [localSystemPrompt, setLocalSystemPrompt] = useState('');
   const [infoSaveError, setInfoSaveError] = useState<string | null>(null);
   const [infoSaved, setInfoSaved] = useState(false);
 
@@ -470,6 +475,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     if (!tpl) return;
     setLocalName(tpl.name);
     setLocalDescription(tpl.description ?? '');
+    setLocalSystemPrompt(tpl.systemPrompt ?? '');
     const sorted = sortedByOrder(
       tpl.questions.map((q) => ({
         ...q,
@@ -507,6 +513,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
           id: templateId,
           name: localName.trim(),
           description: localDescription.trim() || null,
+          systemPrompt: localSystemPrompt.trim() || null,
         },
       });
       setInfoSaved(true);
@@ -831,6 +838,27 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
           rows={4}
           style={{ ...inputStyle, resize: 'vertical' }}
           placeholder="Describe the purpose and scope of this interview template…"
+        />
+      </div>
+
+      <div style={{ marginBottom: 24 }}>
+        <label
+          style={{
+            display: 'block',
+            fontWeight: 500,
+            fontSize: 14,
+            color: 'var(--graphite)',
+            marginBottom: 6,
+          }}
+        >
+          System Prompt
+        </label>
+        <textarea
+          value={localSystemPrompt}
+          onChange={(e) => setLocalSystemPrompt(e.target.value)}
+          rows={8}
+          style={{ ...inputStyle, resize: 'vertical' }}
+          placeholder="Instructions passed to the AI interviewer to guide voice, tone, and structure…"
         />
       </div>
 

@@ -245,7 +245,7 @@ async function fetchTemplateContext(
   prisma: PrismaClient,
   templateId: string,
 ): Promise<{
-  template: { id: string; name: string; description: string | null };
+  template: { id: string; name: string; description: string | null; systemPrompt: string | null };
   templateQuestions: TemplateQuestionRow[];
 }> {
   const [template, templateQuestions] = await Promise.all([
@@ -268,7 +268,7 @@ async function fetchTemplateContext(
 
 /** Convert DB rows into the PromptTemplateData shape for buildSystemPrompt. */
 function buildPromptData(
-  template: { name: string; description: string | null },
+  template: { name: string; description: string | null; systemPrompt: string | null },
   rows: TemplateQuestionRow[],
 ): PromptTemplateData {
   const questions: PromptQuestion[] = rows.map((tq) => ({
@@ -284,7 +284,7 @@ function buildPromptData(
       followupQuestionId: t.followupQuestionId,
     })),
   }));
-  return { name: template.name, description: template.description, questions };
+  return { name: template.name, description: template.description, systemPrompt: template.systemPrompt, questions };
 }
 
 /** Returns the first question still remaining in the session (required first, then optional). */
