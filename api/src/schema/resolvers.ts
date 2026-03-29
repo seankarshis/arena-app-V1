@@ -915,18 +915,8 @@ export const resolvers = {
       ctx: ArenaContext,
     ) {
       requireAuth(ctx);
-      console.log('[resolver] startInterview templateId=%s', args.templateId);
-      try {
-        const result = await startInterviewService(ctx.prisma, ctx.user!.userId, args.templateId);
-        console.log('[resolver] startInterview success interviewId=%s', result.id);
-        return { interviewId: result.id };
-      } catch (err) {
-        console.error('[resolver] startInterview failed: %s', err instanceof Error ? err.message : err);
-        if (err && typeof err === 'object' && 'extensions' in err) {
-          console.error('[resolver] startInterview error extensions: %j', (err as { extensions: unknown }).extensions);
-        }
-        throw err;
-      }
+      const result = await startInterviewService(ctx.prisma, ctx.user!.userId, args.templateId);
+      return { interviewId: result.id };
     },
 
     async abandonInterview(

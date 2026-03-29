@@ -21,6 +21,7 @@ import { Duplex } from 'stream';
 import { PrismaClient } from '@prisma/client';
 import { verifyToken, getBypassUser } from '../middleware/auth';
 import { updateSession } from '../services/session';
+import { clickHouseWrite } from '../observability/clickhouseWriter';
 
 // ─── Fastify type augmentation ────────────────────────────────────────────────
 
@@ -482,6 +483,20 @@ export const sttProxy: FastifyPluginAsync<SttProxyOptions> = async (fastify, opt
 
       // Acknowledge successful authentication.
       sendToClient(socket, { type: 'session_ready' });
+
+      const sessionStart = Date.now();
+      clickHouseWrite('stt_session', {
+        interviewId,
+        event: 'opened',
+      }, { serviceName: 'arena-stt-proxy' });
+
+      socket.once('close', () => {
+        clickHouseWrite('stt_session', {
+          interviewId,
+          event: 'closed',
+          durationMs: Date.now() - sessionStart,
+        }, { serviceName: 'arena-stt-proxy' });
+      });
 
       // Safety timeout: spec requires the backend to close the session after
       // 6 minutes (5-min frontend cap + 1-min margin).

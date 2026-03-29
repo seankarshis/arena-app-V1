@@ -122,7 +122,7 @@ export async function processInterview(
         promptTokens: cleanResult.promptTokens,
         completionTokens: cleanResult.completionTokens,
         status: 'cleaned',
-      });
+      }, { serviceName: 'arena-cleaning' });
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Unknown cleaning error';
@@ -147,15 +147,17 @@ export async function processInterview(
         status: 'error',
         errorMessage,
       });
+      // Log only a structured error code — not the raw error message, which
+      // may contain LLM-generated text that could echo transcription content.
       logger.error(
-        { responseId: response.id, errorMessage },
-        'CLEANING_PIPELINE_ERROR',
+        { responseId: response.id, errorCode: 'CLEANING_PIPELINE_ERROR' },
+        'Cleaning pipeline error',
       );
       clickHouseWrite('cleaning_metrics', {
         responseId: response.id,
         interviewId,
         status: 'error',
-      });
+      }, { serviceName: 'arena-cleaning', severity: 'ERROR' });
     }
   }
 
@@ -168,6 +170,9 @@ export async function processInterview(
     cleanedCount: results.length - errorCount,
     errorCount,
     errorRate,
+  }, {
+    serviceName: 'arena-cleaning',
+    severity: errorRate > 0.1 ? 'ERROR' : 'INFO',
   });
   if (errorRate > 0.1) {
     logger.error(

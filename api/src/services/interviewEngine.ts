@@ -31,6 +31,7 @@ import {
   forbidden,
   validationError,
 } from '../middleware/errors';
+import { clickHouseWrite } from '../observability/clickhouseWriter';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -671,6 +672,15 @@ export async function completeInterview(
       userId,
       templateId: interview.templateId,
     },
+  });
+
+  clickHouseWrite('interview_lifecycle', {
+    interviewId,
+    templateId: interview.templateId,
+    event: 'completed',
+    totalLlmPromptTokens: interview.totalLlmPromptTokens,
+    totalLlmCompletionTokens: interview.totalLlmCompletionTokens,
+    totalTtsCharacters: interview.totalTtsCharacters,
   });
 
   return updatedInterview;

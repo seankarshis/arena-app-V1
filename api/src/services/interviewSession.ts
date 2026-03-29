@@ -256,6 +256,12 @@ export async function pauseInterview(
     await setSessionPausedTTL(interviewId);
   }
 
+  clickHouseWrite('interview_lifecycle', {
+    interviewId,
+    templateId: interview.templateId,
+    event: 'paused',
+  });
+
   return {
     id: updated.id,
     status: updated.status,
@@ -360,6 +366,13 @@ export async function resumeInterview(
       status: 'in_progress',
       pausedAt: null,
     },
+  });
+
+  clickHouseWrite('interview_lifecycle', {
+    interviewId,
+    templateId: interview.templateId,
+    event: 'resumed',
+    resumedFromSnapshot,
   });
 
   return {

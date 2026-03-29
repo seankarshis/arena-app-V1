@@ -2,6 +2,7 @@ import type { ScheduledEvent, ScheduledHandler } from 'aws-lambda';
 import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
 import pino from 'pino';
+import { clickHouseWrite } from '../observability/clickhouseWriter';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -346,6 +347,18 @@ export const handler: ScheduledHandler = async (event: ScheduledEvent) => {
       },
       'Reconciliation complete',
     );
+
+    clickHouseWrite('reconciliation_run', {
+      totalProcessed,
+      alertCount: allAlerts.length,
+      criticalAlertCount: allAlerts.filter((a) => a.severity === 'critical').length,
+      stuckCleaningCount: results.find((r) => r.scan === 'stuck_cleaning')?.processed ?? 0,
+      audioInconsistencyCount: results.find((r) => r.scan === 'audio_inconsistencies')?.processed ?? 0,
+      abandonedInterviewCount: results.find((r) => r.scan === 'paused_abandonment')?.processed ?? 0,
+    }, {
+      serviceName: 'arena-reconciliation',
+      severity: allAlerts.some((a) => a.severity === 'critical') ? 'ERROR' : 'INFO',
+    });
   } catch (error) {
     logger.error(
       {

@@ -5,15 +5,29 @@
 const CREATE_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS arena_telemetry
 (
-  install_id  String,
-  timestamp   DateTime64(3, 'UTC'),
-  environment LowCardinality(String),
-  event_type  LowCardinality(String),
-  attributes  String
+  install_id   String,
+  timestamp    DateTime64(3, 'UTC'),
+  environment  LowCardinality(String),
+  service_name LowCardinality(String),
+  event_type   LowCardinality(String),
+  severity     LowCardinality(String),
+  trace_id     String,
+  span_id      String,
+  attributes   String
 )
 ENGINE = MergeTree()
-ORDER BY (install_id, event_type, timestamp)
+ORDER BY (install_id, service_name, event_type, timestamp)
 `.trim();
+
+// Migration: add new columns to existing installations that have the old
+// 5-column schema. These are no-ops when columns already exist (fresh installs
+// created via CREATE TABLE above already have them).
+const MIGRATION_STATEMENTS = [
+  `ALTER TABLE arena_telemetry ADD COLUMN IF NOT EXISTS service_name LowCardinality(String) DEFAULT 'arena-api'`,
+  `ALTER TABLE arena_telemetry ADD COLUMN IF NOT EXISTS severity LowCardinality(String) DEFAULT 'INFO'`,
+  `ALTER TABLE arena_telemetry ADD COLUMN IF NOT EXISTS trace_id String DEFAULT ''`,
+  `ALTER TABLE arena_telemetry ADD COLUMN IF NOT EXISTS span_id String DEFAULT ''`,
+];
 
 /**
  * Validates required observability env vars and ensures the arena_telemetry
@@ -45,22 +59,41 @@ export async function validateObservabilityConfig(): Promise<void> {
     return;
   }
 
-  // Ensure the arena_telemetry table exists
-  const url = `${host}/?query=${encodeURIComponent(CREATE_TABLE_SQL)}`;
+  const authHeader = `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`;
+
+  // Ensure the arena_telemetry table exists (or is a no-op if it already does).
+  const createUrl = `${host}/?query=${encodeURIComponent(CREATE_TABLE_SQL)}`;
   try {
-    const res = await fetch(url, {
+    const res = await fetch(createUrl, {
       method: 'POST',
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`,
-      },
+      headers: { Authorization: authHeader },
     });
     if (!res.ok) {
       const body = await res.text();
       console.warn(`[Observability] Failed to create arena_telemetry table (${res.status}): ${body.slice(0, 200)}`);
-    } else {
-      console.info('[Observability] arena_telemetry table ready. install_id=%s', process.env.OTEL_CLIENT_INSTALL_ID);
+      return;
     }
   } catch (err) {
     console.warn('[Observability] Could not reach ClickHouse at startup:', err instanceof Error ? err.message : String(err));
+    return;
   }
+
+  // Run column migrations for existing installations (no-ops on fresh tables).
+  for (const sql of MIGRATION_STATEMENTS) {
+    const url = `${host}/?query=${encodeURIComponent(sql)}`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        console.warn(`[Observability] Migration statement failed (${res.status}): ${body.slice(0, 200)}`);
+      }
+    } catch (err) {
+      console.warn('[Observability] Migration statement error:', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  console.info('[Observability] arena_telemetry table ready. install_id=%s', process.env.OTEL_CLIENT_INSTALL_ID);
 }
