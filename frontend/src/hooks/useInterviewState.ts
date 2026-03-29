@@ -81,10 +81,13 @@ export interface InterviewSession {
   llmRetryCount: number;
   /** True when the SSE connection is attempting to reconnect. */
   isReconnecting: boolean;
+  /** Set when startInterview fails because the user already has an active interview. */
+  conflictingInterviewId: string | null;
 }
 
 export interface InterviewActions {
   startInterview: () => Promise<void>;
+  abandonAndStart: () => Promise<void>;
   submitText: (text: string) => Promise<void>;
   skipQuestion: () => Promise<void>;
   pauseInterview: () => Promise<void>;
@@ -125,6 +128,15 @@ const START_INTERVIEW = gql`
   mutation StartInterview($templateId: ID!) {
     startInterview(templateId: $templateId) {
       interviewId
+    }
+  }
+`;
+
+const ABANDON_INTERVIEW = gql`
+  mutation AbandonInterview($interviewId: ID!) {
+    abandonInterview(interviewId: $interviewId) {
+      id
+      status
     }
   }
 `;
@@ -278,6 +290,7 @@ export function useInterviewState(templateId: string): {
     isOffline: false,
     llmRetryCount: 0,
     isReconnecting: false,
+    conflictingInterviewId: null,
   });
 
   // Refs for reading current values inside callbacks without stale closures
@@ -322,6 +335,10 @@ export function useInterviewState(templateId: string): {
     StartInterviewResult,
     { templateId: string }
   >(START_INTERVIEW);
+
+  const [abandonInterviewMutation] = useMutation<unknown, { interviewId: string }>(
+    ABANDON_INTERVIEW
+  );
 
   const [submitResponseMutation] = useMutation<
     SubmitResponseResult,
@@ -705,9 +722,11 @@ export function useInterviewState(templateId: string): {
     actionInFlightRef.current = true;
     setMachineState('STARTING');
     try {
+      console.log('[interview] startInterview templateId=%s', templateId);
       const result = await startInterviewMutation({ variables: { templateId } });
       const interviewId = result.data?.startInterview.interviewId;
       if (!interviewId) throw new Error('No interview ID returned from server');
+      console.log('[interview] startInterview success interviewId=%s', interviewId);
       // Set interviewId and startedAt first — SSE enabled check reads interviewId
       setSession((prev) => ({ ...prev, interviewId, startedAt: new Date() }));
 
@@ -717,14 +736,57 @@ export function useInterviewState(templateId: string): {
       // LLM_STREAMING enables SSE; backend streams the first question immediately
       setMachineState('LLM_STREAMING');
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : 'Failed to start interview';
-      setSession((prev) => ({ ...prev, errorMessage }));
-      setMachineState('ERROR');
+      console.error('[interview] startInterview failed:', err);
+      if (err && typeof err === 'object' && 'graphQLErrors' in err) {
+        console.error('[interview] GraphQL errors:', JSON.stringify((err as { graphQLErrors: unknown }).graphQLErrors, null, 2));
+      }
+      // Detect "already has active interview" — stay in READY and surface a conflict prompt
+      const graphqlErrors = (err && typeof err === 'object' && 'graphQLErrors' in err)
+        ? (err as { graphQLErrors: Array<{ extensions?: { code?: string; details?: { existingInterviewId?: string } } }> }).graphQLErrors
+        : [];
+      const conflictError = graphqlErrors.find(
+        (e) => e.extensions?.code === 'INVALID_STATE' && e.extensions?.details?.existingInterviewId
+      );
+      if (conflictError) {
+        setSession((prev) => ({
+          ...prev,
+          conflictingInterviewId: conflictError.extensions!.details!.existingInterviewId!,
+        }));
+        setMachineState('READY');
+      } else {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to start interview';
+        setSession((prev) => ({ ...prev, errorMessage }));
+        setMachineState('ERROR');
+      }
     } finally {
       actionInFlightRef.current = false;
     }
   }, [templateId, startInterviewMutation, ptt]);
+
+  const abandonAndStart = useCallback(async () => {
+    const conflictId = sessionRef.current.conflictingInterviewId;
+    if (!conflictId) return;
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
+    setMachineState('STARTING');
+    try {
+      await abandonInterviewMutation({ variables: { interviewId: conflictId } });
+      setSession((prev) => ({ ...prev, conflictingInterviewId: null }));
+      const result = await startInterviewMutation({ variables: { templateId } });
+      const interviewId = result.data?.startInterview.interviewId;
+      if (!interviewId) throw new Error('No interview ID returned from server');
+      setSession((prev) => ({ ...prev, interviewId, startedAt: new Date() }));
+      ptt.requestPermission().catch(() => {});
+      setMachineState('LLM_STREAMING');
+    } catch (err) {
+      console.error('[interview] abandonAndStart failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start interview';
+      setSession((prev) => ({ ...prev, errorMessage, conflictingInterviewId: null }));
+      setMachineState('ERROR');
+    } finally {
+      actionInFlightRef.current = false;
+    }
+  }, [templateId, abandonInterviewMutation, startInterviewMutation, ptt]);
 
   const submitText = useCallback(
     async (text: string) => {
@@ -1096,6 +1158,7 @@ export function useInterviewState(templateId: string): {
     session,
     actions: {
       startInterview,
+      abandonAndStart,
       submitText,
       skipQuestion,
       pauseInterview,

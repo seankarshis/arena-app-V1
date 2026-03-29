@@ -9,6 +9,7 @@ import { createCognitoAuthHook, buildContext } from './middleware/auth';
 import { typeDefs } from './schema/typedefs';
 import { resolvers } from './schema/resolvers';
 import { buildArenaContext, type ArenaContext } from './schema/context';
+import { ssePlugin } from './sse/stream';
 
 const prisma = new PrismaClient();
 
@@ -43,6 +44,9 @@ export async function buildServer() {
   app.get('/health', async (_request, reply) => {
     reply.send({ status: 'ok' });
   });
+
+  // --- SSE + TTS routes ---
+  await app.register(ssePlugin, { prisma, apiKey: process.env.CLAUDE_API_KEY });
 
   // --- Apollo Server ---
   const apollo = new ApolloServer<ArenaContext>({

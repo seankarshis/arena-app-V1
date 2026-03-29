@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { getIdToken } from '@/lib/auth';
+import { getIdToken, getBypassUserId } from '@/lib/auth';
+
+const isBypass = process.env.NEXT_PUBLIC_COGNITO_BYPASS === 'true';
 
 export type SSEMessage =
   | { type: 'token'; content: string }
@@ -78,16 +80,22 @@ export function useSSE({
         es = null;
       }
 
-      const token = await getIdToken();
-      if (cancelled) return;
-
       const url = new URL(`${API_BASE}/api/interview/${interviewId}/stream`);
-      if (token !== null) url.searchParams.set('token', token);
+      if (isBypass) {
+        const bypassUserId = getBypassUserId();
+        if (bypassUserId) url.searchParams.set('mock-user-id', bypassUserId);
+      } else {
+        const token = await getIdToken();
+        if (cancelled) return;
+        if (token !== null) url.searchParams.set('token', token);
+      }
 
+      console.log('[useSSE] connecting to', url.toString().replace(/token=[^&]+/, 'token=REDACTED'));
       const eventSource = new EventSource(url.toString());
       es = eventSource;
 
       eventSource.onopen = () => {
+        console.log('[useSSE] connected interviewId=%s', interviewId);
         reconnectAttempts = 0;
         onConnectedRef.current?.();
       };
@@ -95,13 +103,17 @@ export function useSSE({
       eventSource.onmessage = (event: MessageEvent<string>) => {
         try {
           const msg = JSON.parse(event.data) as SSEMessage;
+          if (msg.type !== 'token') {
+            console.log('[useSSE] message type=%s', msg.type, msg);
+          }
           onMessageRef.current(msg);
         } catch {
-          // ignore malformed messages
+          console.warn('[useSSE] malformed message:', event.data);
         }
       };
 
-      eventSource.onerror = () => {
+      eventSource.onerror = (event) => {
+        console.error('[useSSE] error event interviewId=%s readyState=%d attempt=%d/%d', interviewId, eventSource.readyState, reconnectAttempts, MAX_RECONNECT_ATTEMPTS, event);
         if (cancelled) return;
         eventSource.close();
         if (es === eventSource) es = null;
@@ -109,12 +121,14 @@ export function useSSE({
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
           const delay = Math.pow(2, reconnectAttempts) * 1000;
           reconnectAttempts++;
+          console.warn('[useSSE] reconnecting in %dms (attempt %d/%d)', delay, reconnectAttempts, MAX_RECONNECT_ATTEMPTS);
           onReconnectingRef.current?.(reconnectAttempts);
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
             void connectSSE();
           }, delay);
         } else {
+          console.error('[useSSE] max reconnect attempts reached — giving up interviewId=%s', interviewId);
           onErrorRef.current?.();
         }
       };

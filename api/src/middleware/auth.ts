@@ -191,8 +191,13 @@ export function createCognitoAuthHook(prisma: PrismaClient) {
 
     if (isBypass) {
       const headerId = request.headers['x-mock-user-id'];
-      if (typeof headerId === 'string' && headerId) {
-        const row = await prisma.user.findUnique({ where: { id: headerId } });
+      const queryParams = request.query as Record<string, string>;
+      const queryId = queryParams['mock-user-id'];
+      const bypassId = (typeof headerId === 'string' && headerId)
+        ? headerId
+        : (typeof queryId === 'string' && queryId ? queryId : null);
+      if (bypassId) {
+        const row = await prisma.user.findUnique({ where: { id: bypassId } });
         if (row) {
           request.user = { userId: row.id, groups: [row.role], email: row.email };
           return;

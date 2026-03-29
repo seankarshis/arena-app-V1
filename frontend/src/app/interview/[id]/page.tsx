@@ -73,23 +73,73 @@ function InterviewContent({ templateId }: { templateId: string }) {
             Your responses will be recorded as text. Take your time — you can
             pause at any point and resume within 72 hours.
           </p>
-          <button
-            onClick={() => void actions.startInterview()}
-            style={{
-              padding: '14px 40px',
-              borderRadius: 999,
-              border: 'none',
-              backgroundColor: 'var(--horizon-red)',
-              color: 'var(--white)',
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 16,
-              cursor: 'pointer',
-              letterSpacing: '0.02em',
-            }}
-          >
-            Start Interview
-          </button>
+          {session.conflictingInterviewId ? (
+            <div>
+              <p
+                style={{
+                  color: 'var(--graphite)',
+                  fontSize: 15,
+                  marginBottom: 20,
+                  padding: '12px 16px',
+                  backgroundColor: 'var(--ivory-tint)',
+                  borderRadius: 8,
+                  border: '1px solid var(--grey)',
+                }}
+              >
+                You already have an interview in progress. Abandon it and start a fresh one?
+              </p>
+              <button
+                onClick={() => void actions.abandonAndStart()}
+                style={{
+                  padding: '14px 40px',
+                  borderRadius: 999,
+                  border: 'none',
+                  backgroundColor: 'var(--horizon-red)',
+                  color: 'var(--white)',
+                  fontFamily: 'var(--font-primary)',
+                  fontWeight: 600,
+                  fontSize: 16,
+                  cursor: 'pointer',
+                  letterSpacing: '0.02em',
+                  marginRight: 12,
+                }}
+              >
+                Abandon &amp; Start Fresh
+              </button>
+              <button
+                onClick={() => router.push('/')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--grey)',
+                  fontFamily: 'var(--font-primary)',
+                  fontSize: 14,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
+                Go back
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => void actions.startInterview()}
+              style={{
+                padding: '14px 40px',
+                borderRadius: 999,
+                border: 'none',
+                backgroundColor: 'var(--horizon-red)',
+                color: 'var(--white)',
+                fontFamily: 'var(--font-primary)',
+                fontWeight: 600,
+                fontSize: 16,
+                cursor: 'pointer',
+                letterSpacing: '0.02em',
+              }}
+            >
+              Start Interview
+            </button>
+          )}
           <div style={{ marginTop: 24 }}>
             <button
               onClick={() => router.push('/')}

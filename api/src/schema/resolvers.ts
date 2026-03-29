@@ -14,6 +14,27 @@ import {
   internalError,
   externalServiceError,
 } from '../middleware/errors';
+import {
+  startInterview as startInterviewService,
+  abandonInterview as abandonInterviewService,
+  pauseInterview as pauseInterviewService,
+  resumeInterview as resumeInterviewService,
+} from '../services/interviewSession';
+import {
+  submitResponse as submitResponseService,
+  skipQuestion as skipQuestionService,
+  completeInterview as completeInterviewService,
+  createClaudeApiClient,
+  createEventPublisher,
+} from '../services/interviewEngine';
+import { saveDraft as saveDraftService } from '../services/draftService';
+import { pushTurnToSSE } from '../sse/stream';
+
+function getClaudeClient() {
+  const apiKey = process.env.CLAUDE_API_KEY;
+  if (!apiKey) throw internalError('CLAUDE_API_KEY is not configured');
+  return createClaudeApiClient(apiKey);
+}
 
 // ---------------------------------------------------------------------------
 // JSON Scalar
@@ -884,54 +905,87 @@ export const resolvers = {
       return { success: true };
     },
 
-    // --- Interview engine stubs (implemented in a later task) ---
+    // --- Interview engine ---
 
     async startInterview(
       _parent: unknown,
-      _args: { templateId: string },
-      _ctx: ArenaContext,
+      args: { templateId: string },
+      ctx: ArenaContext,
     ) {
-      throw internalError('Interview engine not yet implemented');
+      requireAuth(ctx);
+      console.log('[resolver] startInterview userId=%s templateId=%s', ctx.user!.userId, args.templateId);
+      try {
+        const result = await startInterviewService(ctx.prisma, ctx.user!.userId, args.templateId);
+        console.log('[resolver] startInterview success interviewId=%s', result.id);
+        return { interviewId: result.id };
+      } catch (err) {
+        console.error('[resolver] startInterview failed: %s', err instanceof Error ? err.message : err);
+        if (err && typeof err === 'object' && 'extensions' in err) {
+          console.error('[resolver] startInterview error extensions: %j', (err as { extensions: unknown }).extensions);
+        }
+        throw err;
+      }
+    },
+
+    async abandonInterview(
+      _parent: unknown,
+      args: { interviewId: string },
+      ctx: ArenaContext,
+    ) {
+      requireAuth(ctx);
+      const result = await abandonInterviewService(ctx.prisma, ctx.user!.userId, args.interviewId);
+      return result;
     },
 
     async submitResponse(
       _parent: unknown,
-      _args: { interviewId: string; rawTranscription: string; inputMode: string },
-      _ctx: ArenaContext,
+      args: { interviewId: string; rawTranscription: string; inputMode: string },
+      ctx: ArenaContext,
     ) {
-      throw internalError('Interview engine not yet implemented');
+      requireAuth(ctx);
+      const result = await submitResponseService(ctx.prisma, ctx.user!.userId, args, { claude: getClaudeClient() });
+      void pushTurnToSSE(args.interviewId);
+      return result;
     },
 
     async completeInterview(
       _parent: unknown,
-      _args: { interviewId: string },
-      _ctx: ArenaContext,
+      args: { interviewId: string },
+      ctx: ArenaContext,
     ) {
-      throw internalError('Interview engine not yet implemented');
+      requireAuth(ctx);
+      return completeInterviewService(ctx.prisma, ctx.user!.userId, args.interviewId, { events: createEventPublisher() });
     },
 
     async skipQuestion(
       _parent: unknown,
-      _args: { interviewId: string },
-      _ctx: ArenaContext,
+      args: { interviewId: string },
+      ctx: ArenaContext,
     ) {
-      throw internalError('Interview engine not yet implemented');
+      requireAuth(ctx);
+      const result = await skipQuestionService(ctx.prisma, ctx.user!.userId, args.interviewId, { claude: getClaudeClient() });
+      void pushTurnToSSE(args.interviewId);
+      return result;
     },
 
     async pauseInterview(
       _parent: unknown,
-      _args: { interviewId: string },
-      _ctx: ArenaContext,
+      args: { interviewId: string },
+      ctx: ArenaContext,
     ) {
-      throw internalError('Interview engine not yet implemented');
+      requireAuth(ctx);
+      const result = await pauseInterviewService(ctx.prisma, ctx.user!.userId, args.interviewId);
+      return ctx.prisma.interview.findUnique({ where: { id: result.id } });
     },
 
     async resumeInterview(
       _parent: unknown,
-      _args: { interviewId: string },
-      _ctx: ArenaContext,
+      args: { interviewId: string },
+      ctx: ArenaContext,
     ) {
-      throw internalError('Interview engine not yet implemented');
+      requireAuth(ctx);
+      const result = await resumeInterviewService(ctx.prisma, ctx.user!.userId, args.interviewId);
+      return ctx.prisma.interview.findUnique({ where: { id: result.id } });
     },
 
     // --- Audio operation stubs ---
@@ -998,19 +1052,21 @@ export const resolvers = {
       return { success: true };
     },
 
-    // --- Draft stub ---
+    // --- Draft operations ---
 
     async saveDraft(
       _parent: unknown,
-      _args: {
+      args: {
         interviewId: string;
         content: string;
         inputMode: string;
         sttConfidenceScore?: number | null;
       },
-      _ctx: ArenaContext,
+      ctx: ArenaContext,
     ) {
-      throw internalError('Draft operations not yet implemented (requires Redis session)');
+      requireAuth(ctx);
+      const result = await saveDraftService(ctx.prisma, ctx.user!.userId, args);
+      return { draftId: result.id };
     },
 
     // --- Pipeline operations ---

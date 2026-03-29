@@ -453,6 +453,7 @@ export const typeDefs = `#graphql
 
     # --- Interview operations ---
     startInterview(templateId: ID!): StartInterviewPayload!
+    abandonInterview(interviewId: ID!): Interview!
     submitResponse(
       interviewId: ID!
       rawTranscription: String!

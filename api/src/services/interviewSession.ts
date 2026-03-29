@@ -8,6 +8,7 @@ import {
   createSession,
   getSession,
   updateSession,
+  deleteSession,
   setSessionPausedTTL,
   refreshSessionTTL,
   buildInitialSession,
@@ -144,6 +145,52 @@ export async function startInterview(
     templateId: interview.templateId,
     status: interview.status,
     startedAt: now.toISOString(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// abandonInterview
+// ---------------------------------------------------------------------------
+
+export async function abandonInterview(
+  prisma: PrismaClient,
+  userId: string,
+  interviewId: string,
+): Promise<{ id: string; userId: string; templateId: string; status: string }> {
+  const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+
+  if (!interview) {
+    throw notFound('Interview not found', { interviewId });
+  }
+
+  if (interview.userId !== userId) {
+    throw forbidden('Not authorized to abandon this interview', { interviewId });
+  }
+
+  if (interview.status !== 'in_progress' && interview.status !== 'paused') {
+    throw invalidState('Interview cannot be abandoned — it is not active', {
+      interviewId,
+      currentStatus: interview.status,
+    });
+  }
+
+  const updated = await prisma.interview.update({
+    where: { id: interviewId },
+    data: { status: 'abandoned' },
+  });
+
+  // Clean up Redis session if present — non-fatal if missing
+  try {
+    await deleteSession(interviewId);
+  } catch {
+    // Session TTL will expire naturally
+  }
+
+  return {
+    id: updated.id,
+    userId: updated.userId,
+    templateId: updated.templateId,
+    status: updated.status,
   };
 }
 

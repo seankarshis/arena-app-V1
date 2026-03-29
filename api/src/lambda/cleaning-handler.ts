@@ -175,7 +175,6 @@ export async function processInterview(
 export function createClaudeClient(apiKey: string): ClaudeApiClient {
   return {
     async clean(rawTranscription: string) {
-      // @ts-expect-error — package installed at deploy time, not in dev dependencies
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const client = new Anthropic({ apiKey });
 
@@ -186,9 +185,9 @@ export function createClaudeClient(apiKey: string): ClaudeApiClient {
         messages: [{ role: 'user', content: rawTranscription }],
       });
 
-      const textBlock = message.content.find(
-        (block: { type: string }) => block.type === 'text',
-      );
+      const textBlock = message.content.find((b) => b.type === 'text') as
+        | { type: 'text'; text: string }
+        | undefined;
       const cleanedMarkdown = textBlock?.text ?? '';
 
       return {

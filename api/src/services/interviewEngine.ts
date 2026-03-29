@@ -105,7 +105,6 @@ export function createClaudeApiClient(apiKey: string): ClaudeApiClient {
       model = DEFAULT_LLM_MODEL,
       maxTokens = MAX_LLM_TOKENS,
     }) {
-      // @ts-expect-error — package installed at deploy time, not in devDependencies
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const client = new Anthropic({ apiKey });
       const start = Date.now();
@@ -118,9 +117,9 @@ export function createClaudeApiClient(apiKey: string): ClaudeApiClient {
       });
 
       const latencyMs = Date.now() - start;
-      const textBlock = response.content.find(
-        (b: { type: string }) => b.type === 'text',
-      );
+      const textBlock = response.content.find((b) => b.type === 'text') as
+        | { type: 'text'; text: string }
+        | undefined;
 
       return {
         content: textBlock?.text ?? '',
@@ -138,6 +137,9 @@ export function createClaudeApiClient(apiKey: string): ClaudeApiClient {
 // ---------------------------------------------------------------------------
 
 export function createEventPublisher(): EventPublisher {
+  if (process.env.NODE_ENV !== 'production') {
+    return { async publish() {} };
+  }
   return {
     async publish({ detailType, detail }) {
       const client = new EventBridgeClient({
