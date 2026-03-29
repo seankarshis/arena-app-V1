@@ -91,6 +91,18 @@ const GET_TAGS = gql`
   }
 `;
 
+const GET_ALL_CATEGORIES = gql`
+  query AdminGetAllCategories {
+    getQuestions(first: 500, includeInactive: true) {
+      edges {
+        node {
+          category
+        }
+      }
+    }
+  }
+`;
+
 const CREATE_QUESTION = gql`
   mutation AdminCreateQuestion(
     $text: String!
@@ -201,18 +213,26 @@ interface ModalProps {
   mode: 'create' | 'edit';
   question: Question | null;
   allTags: Tag[];
+  allCategories: string[];
   onSave: (data: { text: string; category: string; tagIds: string[] }) => void;
   onClose: () => void;
   isSaving: boolean;
   error: string | null;
 }
 
-function QuestionModal({ mode, question, allTags, onSave, onClose, isSaving, error }: ModalProps) {
+function QuestionModal({ mode, question, allTags, allCategories, onSave, onClose, isSaving, error }: ModalProps) {
   const [text, setText] = useState(question?.text ?? '');
-  const [category, setCategory] = useState(question?.category ?? '');
+  const existingCategory = question?.category ?? '';
+  const isExisting = allCategories.includes(existingCategory);
+  const [categorySelect, setCategorySelect] = useState(
+    existingCategory && !isExisting ? '__new__' : existingCategory
+  );
+  const [newCategory, setNewCategory] = useState(existingCategory && !isExisting ? existingCategory : '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
     question?.tags.map((t) => t.id) ?? []
   );
+
+  const category = categorySelect === '__new__' ? newCategory.trim() : categorySelect;
 
   const toggleTag = (id: string) => {
     setSelectedTagIds((prev) =>
@@ -285,14 +305,28 @@ function QuestionModal({ mode, question, allTags, onSave, onClose, isSaving, err
           {/* Category */}
           <div style={{ marginBottom: 20 }}>
             <label style={labelStyle}>Category</label>
-            <input
-              type="text"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
+            <select
+              value={categorySelect}
+              onChange={(e) => setCategorySelect(e.target.value)}
               required
-              style={{ ...inputStyle, display: 'block', width: '100%' }}
-              placeholder="e.g. Technical, Behavioral, Leadership…"
-            />
+              style={{ ...inputStyle, display: 'block', width: '100%', cursor: 'pointer' }}
+            >
+              <option value="" disabled>Select a category…</option>
+              {allCategories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+              <option value="__new__">+ Add new category…</option>
+            </select>
+            {categorySelect === '__new__' && (
+              <input
+                type="text"
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+                autoFocus
+                style={{ ...inputStyle, display: 'block', width: '100%', marginTop: 8 }}
+                placeholder="Enter new category name…"
+              />
+            )}
           </div>
 
           {/* Tags */}
@@ -563,6 +597,13 @@ export default function QuestionBank() {
     });
 
   const { data: tagsData, loading: tagsLoading } = useQuery<{ getTags: Tag[] }>(GET_TAGS);
+
+  const { data: categoriesData } = useQuery<{ getQuestions: { edges: { node: { category: string } }[] } }>(
+    GET_ALL_CATEGORIES
+  );
+  const allCategories = Array.from(
+    new Set((categoriesData?.getQuestions.edges ?? []).map((e) => e.node.category).filter(Boolean))
+  ).sort();
 
   // ---------------------------------------------------------------------------
   // Mutations
@@ -1228,6 +1269,7 @@ export default function QuestionBank() {
           mode={modalMode}
           question={editingQuestion}
           allTags={allTags}
+          allCategories={allCategories}
           onSave={(data) => void handleModalSave(data)}
           onClose={closeModal}
           isSaving={creating || updating}

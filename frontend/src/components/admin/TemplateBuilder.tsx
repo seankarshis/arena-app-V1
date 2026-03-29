@@ -821,17 +821,68 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
       </div>
 
       <div style={{ marginBottom: 24 }}>
-        <label
-          style={{
-            display: 'block',
-            fontWeight: 500,
-            fontSize: 14,
-            color: 'var(--graphite)',
-            marginBottom: 6,
-          }}
-        >
-          Description
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <label
+            style={{
+              fontWeight: 500,
+              fontSize: 14,
+              color: 'var(--graphite)',
+            }}
+          >
+            Description
+          </label>
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <span
+              onMouseEnter={(e) => {
+                const tip = (e.currentTarget.nextSibling as HTMLElement);
+                if (tip) tip.style.display = 'block';
+              }}
+              onMouseLeave={(e) => {
+                const tip = (e.currentTarget.nextSibling as HTMLElement);
+                if (tip) tip.style.display = 'none';
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 16,
+                height: 16,
+                borderRadius: '50%',
+                border: '1px solid var(--graphite)',
+                fontSize: 10,
+                fontWeight: 600,
+                color: 'var(--graphite)',
+                cursor: 'default',
+                flexShrink: 0,
+                userSelect: 'none',
+              }}
+            >
+              ?
+            </span>
+            <span
+              style={{
+                display: 'none',
+                position: 'absolute',
+                left: 22,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                backgroundColor: '#1f2937',
+                color: '#f9fafb',
+                fontSize: 12,
+                lineHeight: 1.5,
+                padding: '6px 10px',
+                borderRadius: 6,
+                width: 260,
+                whiteSpace: 'normal',
+                zIndex: 100,
+                pointerEvents: 'none',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+              }}
+            >
+              Shown to interviewees before the interview starts. Briefly explain what to expect so they feel prepared and confident.
+            </span>
+          </span>
+        </div>
         <textarea
           value={localDescription}
           onChange={(e) => setLocalDescription(e.target.value)}
@@ -852,25 +903,56 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
           >
             System Prompt
           </label>
-          <span
-            title="This prompt defines the LLM's behavior for this template — setting its tone, rules, and interviewing style. It runs before every interview session."
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 16,
-              height: 16,
-              borderRadius: '50%',
-              border: '1px solid var(--graphite)',
-              fontSize: 10,
-              fontWeight: 600,
-              color: 'var(--graphite)',
-              cursor: 'default',
-              flexShrink: 0,
-              userSelect: 'none',
-            }}
-          >
-            ?
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <span
+              onMouseEnter={(e) => {
+                const tip = (e.currentTarget.nextSibling as HTMLElement);
+                if (tip) tip.style.display = 'block';
+              }}
+              onMouseLeave={(e) => {
+                const tip = (e.currentTarget.nextSibling as HTMLElement);
+                if (tip) tip.style.display = 'none';
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 16,
+                height: 16,
+                borderRadius: '50%',
+                border: '1px solid var(--graphite)',
+                fontSize: 10,
+                fontWeight: 600,
+                color: 'var(--graphite)',
+                cursor: 'default',
+                flexShrink: 0,
+                userSelect: 'none',
+              }}
+            >
+              ?
+            </span>
+            <span
+              style={{
+                display: 'none',
+                position: 'absolute',
+                left: 22,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                backgroundColor: '#1f2937',
+                color: '#f9fafb',
+                fontSize: 12,
+                lineHeight: 1.5,
+                padding: '6px 10px',
+                borderRadius: 6,
+                width: 260,
+                whiteSpace: 'normal',
+                zIndex: 100,
+                pointerEvents: 'none',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+              }}
+            >
+              This prompt defines the LLM&apos;s behavior for this template — setting its tone, rules, and interviewing style. It runs before every interview session.
+            </span>
           </span>
         </div>
         <textarea
