@@ -842,17 +842,37 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
       </div>
 
       <div style={{ marginBottom: 24 }}>
-        <label
-          style={{
-            display: 'block',
-            fontWeight: 500,
-            fontSize: 14,
-            color: 'var(--graphite)',
-            marginBottom: 6,
-          }}
-        >
-          System Prompt
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <label
+            style={{
+              fontWeight: 500,
+              fontSize: 14,
+              color: 'var(--graphite)',
+            }}
+          >
+            System Prompt
+          </label>
+          <span
+            title="This prompt defines the LLM's behavior for this template — setting its tone, rules, and interviewing style. It runs before every interview session."
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 16,
+              height: 16,
+              borderRadius: '50%',
+              border: '1px solid var(--graphite)',
+              fontSize: 10,
+              fontWeight: 600,
+              color: 'var(--graphite)',
+              cursor: 'default',
+              flexShrink: 0,
+              userSelect: 'none',
+            }}
+          >
+            ?
+          </span>
+        </div>
         <textarea
           value={localSystemPrompt}
           onChange={(e) => setLocalSystemPrompt(e.target.value)}
