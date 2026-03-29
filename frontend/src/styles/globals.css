@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400&family=Space+Grotesk:wght@700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@100;300;400;500;600;700&family=IBM+Plex+Mono:wght@400&family=Space+Grotesk:wght@700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -13,9 +13,11 @@
   --dark-maroon: #3A0A0D;
   --ivory-tint: #ECEADE;
   --white: #FFFFFF;
+  --logo-grey: #97989C;
 
   /* Typography */
   --font-primary: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-logo: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "IBM Plex Mono", monospace;
   --font-hero: "Space Grotesk", sans-serif;
 }

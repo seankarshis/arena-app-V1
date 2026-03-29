@@ -5,7 +5,7 @@ import rateLimit from '@fastify/rate-limit';
 import { ApolloServer } from '@apollo/server';
 import fastifyApollo, { fastifyApolloDrainPlugin } from '@as-integrations/fastify';
 import { PrismaClient } from '@prisma/client';
-import { cognitoAuthHook, buildContext } from './middleware/auth';
+import { createCognitoAuthHook, buildContext } from './middleware/auth';
 import { typeDefs } from './schema/typedefs';
 import { resolvers } from './schema/resolvers';
 import { buildArenaContext, type ArenaContext } from './schema/context';
@@ -37,7 +37,7 @@ export async function buildServer() {
   });
 
   // --- Auth hook (runs before every request) ---
-  app.addHook('onRequest', cognitoAuthHook);
+  app.addHook('onRequest', createCognitoAuthHook(prisma));
 
   // --- Health check (skipped by auth hook) ---
   app.get('/health', async (_request, reply) => {

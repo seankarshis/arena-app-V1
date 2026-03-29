@@ -63,22 +63,40 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         }}
       >
         {/* Wordmark */}
-        <div style={{ padding: '28px 24px 32px' }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--ivory-tint)' }}>
           <span
             style={{
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 18,
-              color: 'var(--graphite)',
-              letterSpacing: '-0.01em',
+              display: 'block',
+              fontFamily: 'var(--font-logo)',
+              fontWeight: 100,
+              fontSize: 22,
+              letterSpacing: '-0.06em',
+              color: 'var(--logo-grey)',
+              textTransform: 'lowercase',
+              userSelect: 'none',
             }}
           >
             elastichorizon
           </span>
+          <span
+            style={{
+              display: 'block',
+              marginTop: 6,
+              fontFamily: 'var(--font-primary)',
+              fontWeight: 300,
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'var(--grey)',
+              userSelect: 'none',
+            }}
+          >
+            Arena AI — Admin
+          </span>
         </div>
 
         {/* Nav links */}
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 12px', flex: 1 }}>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '16px 12px 0', flex: 1 }}>
           {NAV_ITEMS.map((item) => {
             const active = isActive(item.href);
             return (

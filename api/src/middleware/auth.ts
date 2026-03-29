@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { PrismaClient } from '@prisma/client';
 
 export interface AuthUser {
   userId: string;
@@ -178,43 +179,53 @@ function extractToken(request: FastifyRequest): string | null {
   return match ? match[1] : null;
 }
 
-export async function cognitoAuthHook(
-  request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<void> {
-  // Skip auth for health check
-  if (request.url === '/health') return;
+export function createCognitoAuthHook(prisma: PrismaClient) {
+  return async function cognitoAuthHook(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<void> {
+    // Skip auth for health check
+    if (request.url === '/health') return;
 
-  const isBypass = process.env.COGNITO_BYPASS === 'true';
+    const isBypass = process.env.COGNITO_BYPASS === 'true';
 
-  if (isBypass) {
-    request.user = getBypassUser();
-    return;
-  }
+    if (isBypass) {
+      const headerId = request.headers['x-mock-user-id'];
+      if (typeof headerId === 'string' && headerId) {
+        const row = await prisma.user.findUnique({ where: { id: headerId } });
+        if (row) {
+          request.user = { userId: row.id, groups: [row.role], email: row.email };
+          return;
+        }
+      }
+      request.user = getBypassUser();
+      return;
+    }
 
-  const token = extractToken(request);
-  if (!token) {
-    reply.code(401).send({
-      errors: [{
-        message: 'Missing or invalid Authorization header',
-        extensions: { code: 'UNAUTHORIZED' },
-      }],
-    });
-    return;
-  }
+    const token = extractToken(request);
+    if (!token) {
+      reply.code(401).send({
+        errors: [{
+          message: 'Missing or invalid Authorization header',
+          extensions: { code: 'UNAUTHORIZED' },
+        }],
+      });
+      return;
+    }
 
-  try {
-    request.user = await verifyToken(token);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Token validation failed';
-    request.log.warn('JWT validation failed: %s', message);
-    reply.code(401).send({
-      errors: [{
-        message,
-        extensions: { code: 'UNAUTHORIZED' },
-      }],
-    });
-  }
+    try {
+      request.user = await verifyToken(token);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Token validation failed';
+      request.log.warn('JWT validation failed: %s', message);
+      reply.code(401).send({
+        errors: [{
+          message,
+          extensions: { code: 'UNAUTHORIZED' },
+        }],
+      });
+    }
+  };
 }
 
 export function buildContext(request: FastifyRequest): AuthUser | null {

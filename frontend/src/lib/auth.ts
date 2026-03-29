@@ -2,6 +2,21 @@
 
 const isBypass = process.env.NEXT_PUBLIC_COGNITO_BYPASS === 'true';
 
+const BYPASS_USER_ID_KEY = 'mock-user-id';
+const BYPASS_USER_NAME_KEY = 'mock-user-name';
+const BYPASS_USER_ROLE_KEY = 'mock-user-role';
+
+export function getBypassUserId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(BYPASS_USER_ID_KEY);
+}
+
+export function setBypassUser(id: string, name: string, role: string): void {
+  localStorage.setItem(BYPASS_USER_ID_KEY, id);
+  localStorage.setItem(BYPASS_USER_NAME_KEY, name);
+  localStorage.setItem(BYPASS_USER_ROLE_KEY, role);
+}
+
 // Only configure Amplify when not bypassing
 if (!isBypass) {
   const { Amplify } = require('aws-amplify');
@@ -30,7 +45,10 @@ export async function getIdToken(): Promise<string | null> {
 }
 
 export async function getUserGroups(): Promise<string[]> {
-  if (isBypass) return ['admin'];
+  if (isBypass) {
+    const role = typeof window !== 'undefined' ? localStorage.getItem(BYPASS_USER_ROLE_KEY) : null;
+    return [role ?? 'admin'];
+  }
   try {
     const { fetchAuthSession } = await import('aws-amplify/auth');
     const session = await fetchAuthSession();
@@ -57,14 +75,23 @@ export async function login(email: string, password: string) {
 }
 
 export async function logout() {
-  if (isBypass) return;
+  if (isBypass) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(BYPASS_USER_ID_KEY);
+      localStorage.removeItem(BYPASS_USER_NAME_KEY);
+      localStorage.removeItem(BYPASS_USER_ROLE_KEY);
+    }
+    return;
+  }
   const { signOut } = await import('aws-amplify/auth');
   return signOut();
 }
 
 export async function getUser() {
   if (isBypass) {
-    return { userId: 'mock-admin', username: 'dev@localhost' };
+    const id = typeof window !== 'undefined' ? localStorage.getItem(BYPASS_USER_ID_KEY) : null;
+    const name = typeof window !== 'undefined' ? localStorage.getItem(BYPASS_USER_NAME_KEY) : null;
+    return { userId: id ?? 'mock-admin', username: name ?? 'dev@localhost' };
   }
   try {
     const { getCurrentUser } = await import('aws-amplify/auth');

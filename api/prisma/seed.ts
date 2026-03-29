@@ -151,12 +151,16 @@ const questionTagAssociations = [
 // ── Main seed function ──────────────────────────────────────────────────────
 
 export async function seed() {
-  // 1. Create users
-  await prisma.user.createMany({
-    data: [
-      { id: ADMIN_USER_ID, name: 'Admin User', email: 'admin@elastichorizon.com', role: 'admin' },
-      { id: STANDARD_USER_ID, name: 'Test Candidate', email: 'candidate@example.com', role: 'user' },
-    ],
+  // 1. Create users (upsert so re-running the seed updates existing records)
+  await prisma.user.upsert({
+    where: { id: ADMIN_USER_ID },
+    update: { name: 'Admin User', email: 'admin@elastichorizon.com', role: 'admin' },
+    create: { id: ADMIN_USER_ID, name: 'Admin User', email: 'admin@elastichorizon.com', role: 'admin' },
+  })
+  await prisma.user.upsert({
+    where: { id: STANDARD_USER_ID },
+    update: { name: 'Client', email: 'client@client.com', role: 'user' },
+    create: { id: STANDARD_USER_ID, name: 'Client', email: 'client@client.com', role: 'user' },
   })
 
   // 2. Create tags

@@ -5,7 +5,8 @@
 | Token | Hex | Usage |
 |---|---|---|
 | `--horizon-red` | `#7A0E13` | Primary CTA, accents, links, active states |
-| `--graphite` | `#1A1A1A` | Headlines, body text, wordmark |
+| `--graphite` | `#1A1A1A` | Headlines, body text |
+| `--logo-grey` | `#97989C` | Wordmark color |
 | `--ivory` | `#F5F2EC` | Page backgrounds, card surfaces |
 | `--grey` | `#6B6B6B` | Secondary/caption text |
 | `--dark-maroon` | `#3A0A0D` | Dark UI surfaces (e.g. chat panel) |
@@ -16,15 +17,21 @@ All text/background pairings must meet WCAG AA (4.5:1 body, 3:1 large text).
 
 ## Typography
 
-### Font stack (primary)
+### Font stacks
+
 ```css
+/* Primary — all UI, body, headings */
 font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+/* Logo wordmark only */
+--font-logo: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 ```
 
 ### Hierarchy
 
 | Element | Font | Weight | Size | Line Height | Extras |
 |---|---|---|---|---|---|
+| Logo wordmark | IBM Plex Sans | 100 | 22px | — | `letter-spacing: -0.06em; color: var(--logo-grey); text-transform: lowercase; user-select: none` |
 | H1 (hero only) | Space Grotesk | 700 | — | 1.05–1.1 | `letter-spacing: -0.015em` |
 | H2 | IBM Plex Sans | 600 | — | — | — |
 | H3 | IBM Plex Sans | 500 | — | — | — |
@@ -40,7 +47,14 @@ font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 ## Logo
 
 - **Format:** Wordmark only — `elastichorizon` (all lowercase, one word, no icon).
-- **Color:** `--graphite` on light backgrounds, `--ivory` on dark/red backgrounds.
+- **Rendering:**
+  - `font-family: var(--font-logo)` (IBM Plex Sans)
+  - `font-weight: 100`
+  - `font-size: 22px`
+  - `letter-spacing: -0.06em`
+  - `color: var(--logo-grey)` (`#97989C`)
+  - `text-transform: lowercase`
+  - `user-select: none`
 - **Placement:** Top-left, with clear space ≥ cap-height of "h" on all sides.
 - **Never:** add icons, capitalize, hyphenate, add spaces, distort, or apply effects.
 
