@@ -8,27 +8,10 @@ export function NetworkOfflineBanner() {
   return (
     <div
       role="alert"
-      style={{
-        padding: '12px 24px',
-        backgroundColor: '#FEF2F2',
-        borderBottom: '1px solid #FECACA',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        flexShrink: 0,
-      }}
+      className="py-3 px-6 bg-horizon-red/5 border-b border-horizon-red/30 flex items-center gap-2 shrink-0"
     >
-      <span
-        style={{
-          display: 'inline-block',
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          backgroundColor: '#DC2626',
-          flexShrink: 0,
-        }}
-      />
-      <span style={{ fontSize: 14, color: '#991B1B' }}>
+      <span className="inline-block w-2 h-2 rounded-full bg-horizon-red shrink-0" />
+      <span className="text-sm text-horizon-red">
         You appear to be offline. Your interview will resume when your connection
         returns.
       </span>
@@ -44,33 +27,10 @@ export function ReconnectingBanner() {
   return (
     <div
       role="status"
-      style={{
-        padding: '8px 24px',
-        backgroundColor: '#FFFBEB',
-        borderBottom: '1px solid #FDE68A',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        flexShrink: 0,
-      }}
+      className="py-2 px-6 bg-ivory-tint border-b border-grey/30 flex items-center gap-2 shrink-0"
     >
-      <span
-        style={{
-          display: 'inline-block',
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          backgroundColor: '#F59E0B',
-          animation: 'arena-reconnect-pulse 1.5s ease-in-out infinite',
-        }}
-      />
-      <span style={{ fontSize: 13, color: '#92400E' }}>Reconnecting…</span>
-      <style>{`
-        @keyframes arena-reconnect-pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.3; }
-        }
-      `}</style>
+      <span className="inline-block w-2 h-2 rounded-full bg-grey animate-arena-reconnect-pulse" />
+      <span className="text-[13px] text-graphite">Reconnecting…</span>
     </div>
   );
 }
@@ -101,42 +61,16 @@ export function LLMRetryPanel({
     return (
       <div
         role="alert"
-        style={{
-          padding: '20px 24px',
-          backgroundColor: '#FEF2F2',
-          borderBottom: '1px solid #FECACA',
-          textAlign: 'center',
-          flexShrink: 0,
-        }}
+        className="py-5 px-6 bg-horizon-red/5 border-b border-horizon-red/30 text-center shrink-0"
       >
-        <p
-          style={{
-            fontSize: 15,
-            color: '#991B1B',
-            fontWeight: 500,
-            marginBottom: 8,
-          }}
-        >
+        <p className="text-[15px] text-horizon-red font-medium mb-2">
           We&apos;re experiencing technical difficulties.
         </p>
-        <p style={{ fontSize: 14, color: '#B91C1C', marginBottom: 16 }}>
+        <p className="text-sm text-horizon-red mb-4">
           Your interview has been saved — you can resume later.
         </p>
         {onResume && (
-          <button
-            onClick={onResume}
-            style={{
-              padding: '10px 24px',
-              borderRadius: 999,
-              border: 'none',
-              backgroundColor: 'var(--horizon-red)',
-              color: 'var(--white)',
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 14,
-              cursor: 'pointer',
-            }}
-          >
+          <button onClick={onResume} className="btn-primary">
             Resume Later
           </button>
         )}
@@ -147,40 +81,15 @@ export function LLMRetryPanel({
   return (
     <div
       role="alert"
-      style={{
-        padding: '16px 24px',
-        backgroundColor: '#FEF2F2',
-        borderBottom: '1px solid #FECACA',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 12,
-        flexShrink: 0,
-      }}
+      className="py-4 px-6 bg-horizon-red/5 border-b border-horizon-red/30 flex items-center justify-between gap-3 shrink-0"
     >
       <div>
-        <p style={{ fontSize: 14, color: '#991B1B', marginBottom: 4 }}>
-          {errorMessage}
-        </p>
-        <p style={{ fontSize: 12, color: '#B91C1C' }}>
+        <p className="text-sm text-horizon-red mb-1">{errorMessage}</p>
+        <p className="text-xs text-horizon-red">
           Attempt {retryCount} of {maxRetries}
         </p>
       </div>
-      <button
-        onClick={onRetry}
-        style={{
-          padding: '8px 20px',
-          borderRadius: 999,
-          border: 'none',
-          backgroundColor: 'var(--horizon-red)',
-          color: 'var(--white)',
-          fontFamily: 'var(--font-primary)',
-          fontWeight: 600,
-          fontSize: 13,
-          cursor: 'pointer',
-          flexShrink: 0,
-        }}
-      >
+      <button onClick={onRetry} className="btn-primary shrink-0 py-2 px-5 text-[13px]">
         Retry
       </button>
     </div>
@@ -193,17 +102,8 @@ export function LLMRetryPanel({
 
 export function STTPartialWarning() {
   return (
-    <div
-      role="alert"
-      style={{
-        padding: '8px 16px',
-        backgroundColor: '#FFFBEB',
-        borderRadius: 6,
-        border: '1px solid #FDE68A',
-        marginBottom: 8,
-      }}
-    >
-      <p style={{ fontSize: 13, color: '#92400E' }}>
+    <div role="alert" className="alert-warning mb-2">
+      <p className="text-[13px] text-graphite">
         Connection interrupted — your response may be incomplete. You can redo to
         try again.
       </p>
@@ -224,32 +124,13 @@ export function MediaErrorBanner({ errorMessage, onRetry }: MediaErrorBannerProp
   return (
     <div
       role="alert"
-      style={{
-        padding: '12px 24px',
-        backgroundColor: '#FEF2F2',
-        borderBottom: '1px solid #FECACA',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 12,
-        flexShrink: 0,
-      }}
+      className="py-3 px-6 bg-horizon-red/5 border-b border-horizon-red/30 flex items-center justify-between gap-3 shrink-0"
     >
-      <p style={{ fontSize: 14, color: '#991B1B' }}>{errorMessage}</p>
+      <p className="text-sm text-horizon-red">{errorMessage}</p>
       <button
         onClick={onRetry}
-        style={{
-          padding: '6px 16px',
-          borderRadius: 999,
-          border: '1px solid #991B1B',
-          backgroundColor: 'transparent',
-          color: '#991B1B',
-          fontFamily: 'var(--font-primary)',
-          fontWeight: 500,
-          fontSize: 13,
-          cursor: 'pointer',
-          flexShrink: 0,
-        }}
+        className="btn-secondary shrink-0 py-1.5 px-4 text-[13px] border-horizon-red text-horizon-red
+                   hover:bg-horizon-red/5"
       >
         Retry Microphone
       </button>

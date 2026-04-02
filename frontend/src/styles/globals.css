@@ -6,6 +6,7 @@
 
 :root {
   /* Brand colors — from brandStandards.md */
+  /* Hex values for non-Tailwind CSS (borders, outlines, etc.) */
   --horizon-red: #7A0E13;
   --graphite: #1A1A1A;
   --ivory: #F5F2EC;
@@ -14,6 +15,27 @@
   --ivory-tint: #ECEADE;
   --white: #FFFFFF;
   --logo-grey: #97989C;
+
+  /* RGB channels for Tailwind opacity modifier support */
+  --c-horizon-red: 122 14 19;
+  --c-graphite: 26 26 26;
+  --c-ivory: 245 242 236;
+  --c-grey: 107 107 107;
+  --c-dark-maroon: 58 10 13;
+  --c-ivory-tint: 236 234 222;
+  --c-white: 255 255 255;
+  --c-logo-grey: 151 152 156;
+
+  /* Accent colors — warm extensions of brand palette */
+  --arena-gold: #8B6914;
+  --arena-amber: #A37F1F;
+  --arena-copper: #8B5C34;
+  --arena-wine: #5C1118;
+
+  --c-arena-gold: 139 105 20;
+  --c-arena-amber: 163 127 31;
+  --c-arena-copper: 139 92 52;
+  --c-arena-wine: 92 17 24;
 
   /* Typography */
   --font-primary: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -70,4 +92,211 @@ pre {
 *:focus-visible {
   outline: 2px solid var(--horizon-red);
   outline-offset: 2px;
+}
+
+/* ================================================================
+   COMPONENT LAYER — reusable patterns
+   ================================================================ */
+
+@layer components {
+  /* ----- Buttons ----- */
+  .btn-primary {
+    @apply rounded-md border-none bg-horizon-red text-white font-primary font-semibold text-sm
+           cursor-pointer px-6 py-2.5 tracking-[0.01em]
+           transition-opacity duration-150 active:scale-[0.98];
+  }
+  .btn-primary:disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply rounded-md border border-grey bg-white text-graphite font-primary font-medium text-sm
+           cursor-pointer px-5 py-2.5
+           transition-[color,background-color] duration-200
+           hover:border-graphite active:scale-[0.98];
+  }
+
+  .btn-copper {
+    @apply rounded-md border-none bg-arena-copper text-white font-primary font-medium text-sm
+           cursor-pointer px-5 py-2.5 tracking-[0.01em]
+           transition-opacity duration-150 active:scale-[0.98];
+  }
+  .btn-copper:disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  .btn-amber {
+    @apply rounded-md border border-arena-amber bg-transparent text-arena-amber font-primary font-medium text-sm
+           cursor-pointer px-5 py-2.5
+           transition-[color,background-color] duration-200
+           hover:bg-arena-amber/10 active:scale-[0.98];
+  }
+
+  .btn-wine {
+    @apply rounded-md border border-arena-wine bg-transparent text-arena-wine font-primary font-medium text-sm
+           cursor-pointer px-5 py-2.5
+           transition-[color,background-color] duration-200
+           hover:bg-arena-wine/10 active:scale-[0.98];
+  }
+
+  .btn-ghost {
+    @apply bg-transparent border-none font-primary text-sm text-grey cursor-pointer p-1
+           hover:text-horizon-red transition-colors duration-150;
+  }
+
+  /* ----- Inputs ----- */
+  .input-field {
+    @apply w-full rounded border border-grey bg-ivory-tint font-primary text-base
+           text-graphite outline-none px-3 py-2
+           focus:border-horizon-red transition-[border-color] duration-150;
+  }
+
+  .select-field {
+    @apply rounded border border-grey bg-ivory-tint font-primary text-sm
+           text-graphite outline-none px-3 py-2 cursor-pointer
+           focus:border-horizon-red transition-[border-color] duration-150;
+  }
+
+  /* ----- Cards ----- */
+  .card {
+    @apply bg-white rounded border border-ivory-tint p-6;
+  }
+
+  .card-interactive {
+    @apply bg-white rounded border border-ivory-tint p-6
+           transition-[border-radius,border-color] duration-200
+           hover:rounded-lg active:scale-[0.98];
+  }
+
+  /* ----- Status badges (brand-only palette) ----- */
+  .badge {
+    @apply inline-block px-2.5 py-0.5 rounded text-xs font-semibold capitalize;
+  }
+
+  .badge-active {
+    @apply badge bg-horizon-red text-white;
+  }
+
+  .badge-published {
+    @apply badge bg-arena-gold text-white;
+  }
+
+  .badge-completed {
+    @apply badge bg-graphite text-white;
+  }
+
+  .badge-draft {
+    @apply badge bg-ivory-tint text-graphite;
+  }
+
+  .badge-paused {
+    @apply badge bg-dark-maroon text-ivory;
+  }
+
+  .badge-archived {
+    @apply badge text-grey text-xs font-semibold capitalize;
+  }
+
+  /* ----- Table / data grid ----- */
+  .col-header {
+    @apply text-2xs font-semibold text-white uppercase tracking-label;
+  }
+
+  /* ----- Modal overlay ----- */
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 flex items-center justify-center;
+    background-color: rgba(26, 26, 26, 0.5);
+  }
+
+  .modal-panel {
+    @apply bg-white rounded p-8 w-full max-w-lg border border-ivory-tint;
+  }
+
+  /* ----- Accent border (emphasis/active indicator) ----- */
+  .accent-left {
+    @apply border-l-2 border-l-horizon-red;
+  }
+
+  .accent-top {
+    @apply border-t-2 border-t-horizon-red;
+  }
+
+  /* ----- Page-level containers ----- */
+  .page-header {
+    @apply py-5 px-8 border-b border-ivory-tint bg-white;
+  }
+
+  .page-content {
+    @apply py-6 px-8;
+  }
+
+  /* ----- Alert ----- */
+  .alert-error {
+    @apply rounded border border-horizon-red/30 bg-horizon-red/5
+           p-3 text-sm text-horizon-red;
+  }
+
+  .alert-warning {
+    @apply rounded border border-grey/30 bg-ivory-tint
+           p-3 text-sm text-graphite;
+  }
+}
+
+/* ================================================================
+   UTILITY LAYER
+   ================================================================ */
+
+@layer utilities {
+  .hover-soften {
+    @apply rounded transition-[border-radius] duration-200 hover:rounded-lg;
+  }
+}
+
+/* ================================================================
+   BRANDED SCROLLBARS
+   ================================================================ */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--grey) var(--ivory-tint);
+}
+
+/* WebKit (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ivory-tint);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--logo-grey);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--grey);
+}
+
+/* ================================================================
+   KEYFRAMES — moved from inline <style> tags
+   ================================================================ */
+
+@keyframes arena-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes arena-ptt-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+@keyframes arena-reconnect-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }

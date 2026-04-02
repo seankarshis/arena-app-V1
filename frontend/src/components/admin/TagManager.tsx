@@ -2,6 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, gql } from '@apollo/client';
+import { cn } from '@/lib/utils';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,54 +50,6 @@ const UPDATE_TAG = gql`
 `;
 
 // ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: 999,
-  border: 'none',
-  backgroundColor: 'var(--horizon-red)',
-  color: 'var(--white)',
-  fontFamily: 'var(--font-primary)',
-  fontWeight: 600,
-  fontSize: 14,
-  cursor: 'pointer',
-};
-
-const secondaryBtn: React.CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: 8,
-  border: '1px solid var(--ivory-tint)',
-  backgroundColor: 'var(--white)',
-  color: 'var(--graphite)',
-  fontFamily: 'var(--font-primary)',
-  fontWeight: 500,
-  fontSize: 14,
-  cursor: 'pointer',
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: '1px solid var(--grey)',
-  backgroundColor: 'var(--ivory-tint)',
-  fontFamily: 'var(--font-primary)',
-  fontSize: 14,
-  color: 'var(--graphite)',
-  outline: 'none',
-  width: '100%',
-};
-
-const colHeader: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 600,
-  color: 'var(--grey)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.07em',
-};
-
-// ---------------------------------------------------------------------------
 // TagModal
 // ---------------------------------------------------------------------------
 
@@ -117,52 +71,15 @@ function TagModal({ mode, tag, onSave, onClose, isSaving, error }: TagModalProps
   };
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(26,26,26,0.5)',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          backgroundColor: 'var(--white)',
-          borderRadius: 12,
-          padding: 32,
-          width: '100%',
-          maxWidth: 520,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-        }}
-      >
-        <h2
-          style={{
-            fontFamily: 'var(--font-primary)',
-            fontWeight: 600,
-            fontSize: 20,
-            color: 'var(--graphite)',
-            marginBottom: 24,
-          }}
-        >
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel max-w-[520px]" onClick={(e) => e.stopPropagation()}>
+        <h2 className="font-semibold text-xl text-graphite mb-6">
           {mode === 'create' ? 'Create Tag' : 'Edit Tag'}
         </h2>
 
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 18 }}>
-            <label
-              style={{
-                display: 'block',
-                fontWeight: 500,
-                fontSize: 14,
-                color: 'var(--graphite)',
-                marginBottom: 6,
-              }}
-            >
+          <div className="mb-4">
+            <label className="block font-medium text-sm text-graphite mb-1.5">
               Label *
             </label>
             <input
@@ -171,43 +88,26 @@ function TagModal({ mode, tag, onSave, onClose, isSaving, error }: TagModalProps
               onChange={(e) => setLabel(e.target.value)}
               required
               autoFocus
-              style={inputStyle}
+              className="input-field text-sm"
               placeholder="e.g. Leadership, React, Senior"
             />
           </div>
 
-          {error && (
-            <p
-              style={{
-                color: 'var(--horizon-red)',
-                fontSize: 14,
-                marginBottom: 16,
-                padding: '8px 12px',
-                backgroundColor: '#FEE2E2',
-                borderRadius: 6,
-              }}
-            >
-              {error}
-            </p>
-          )}
+          {error && <div className="alert-error mb-4">{error}</div>}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
               disabled={isSaving}
-              style={{ ...secondaryBtn, opacity: isSaving ? 0.6 : 1 }}
+              className={cn('btn-secondary', isSaving && 'opacity-60')}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSaving || !label.trim()}
-              style={{
-                ...primaryBtn,
-                opacity: isSaving || !label.trim() ? 0.5 : 1,
-                cursor: isSaving || !label.trim() ? 'not-allowed' : 'pointer',
-              }}
+              className="btn-primary"
             >
               {isSaving ? 'Saving…' : mode === 'create' ? 'Create' : 'Save Changes'}
             </button>
@@ -237,8 +137,6 @@ export default function TagManager() {
 
   const tags = data?.getTags ?? [];
 
-  // Derive unique tag types for filter dropdown
-  // Filter tags
   const filteredTags = useMemo(() => {
     return tags.filter((t) => {
       if (!showInactive && !t.isActive) return false;
@@ -284,57 +182,30 @@ export default function TagManager() {
       await updateTag({ variables: { id: tag.id, isActive: !tag.isActive } });
       void refetch();
     } catch {
-      // silent — could add toast later
+      // silent
     }
   };
 
   return (
     <>
       {/* Header */}
-      <header
-        style={{
-          padding: '20px 32px',
-          borderBottom: '1px solid var(--ivory-tint)',
-          backgroundColor: 'var(--white)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}
-      >
+      <header className="page-header flex items-center justify-between gap-4">
         <div>
-          <h2 style={{ fontWeight: 600, fontSize: 22, color: 'var(--graphite)' }}>Tags</h2>
-          <p style={{ color: 'var(--grey)', fontSize: 14 }}>
+          <h2 className="font-semibold text-[22px] text-graphite">Tags</h2>
+          <p className="text-grey text-sm">
             Manage the controlled vocabulary of tags used across questions and users.
           </p>
         </div>
-        <button onClick={openCreate} style={primaryBtn}>
+        <button onClick={openCreate} className="btn-primary">
           + New Tag
         </button>
       </header>
 
       {/* Content */}
-      <div style={{ padding: '24px 32px' }}>
+      <div className="page-content">
         {/* Filters */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            marginBottom: 20,
-          }}
-        >
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 14,
-              color: 'var(--graphite)',
-              cursor: 'pointer',
-              userSelect: 'none',
-            }}
-          >
+        <div className="flex items-center gap-4 mb-5">
+          <label className="flex items-center gap-2 text-sm text-graphite cursor-pointer select-none">
             <input
               type="checkbox"
               checked={showInactive}
@@ -346,123 +217,58 @@ export default function TagManager() {
         </div>
 
         {error && (
-          <div
-            role="alert"
-            style={{
-              backgroundColor: '#FEE2E2',
-              border: '1px solid #FCA5A5',
-              borderRadius: 8,
-              padding: '12px 16px',
-              marginBottom: 16,
-              color: '#B91C1C',
-              fontSize: 14,
-            }}
-          >
+          <div role="alert" className="alert-error mb-4">
             Failed to load tags: {error.message}
           </div>
         )}
 
         {loading && tags.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--grey)', fontSize: 15 }}>
-            Loading tags…
-          </div>
+          <div className="text-center py-16 text-grey text-[15px]">Loading tags…</div>
         ) : filteredTags.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--grey)', fontSize: 15 }}>
+          <div className="text-center py-16 text-grey text-[15px]">
             {tags.length === 0 ? 'No tags yet. Create one to get started.' : 'No tags match the current filters.'}
           </div>
         ) : (
-          <div
-            style={{
-              backgroundColor: 'var(--white)',
-              borderRadius: 12,
-              border: '1px solid var(--ivory-tint)',
-              overflow: 'hidden',
-            }}
-          >
+          <div className="bg-white rounded border border-ivory-tint overflow-hidden">
             {/* Table header */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 100px 140px',
-                padding: '11px 18px',
-                borderBottom: '1px solid var(--ivory-tint)',
-                backgroundColor: 'var(--ivory)',
-                gap: 12,
-              }}
-            >
+            <div className="grid grid-cols-[1fr_100px_140px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
               {['Label', 'Status', 'Actions'].map((h) => (
-                <span key={h} style={colHeader}>
-                  {h}
-                </span>
+                <span key={h} className="col-header">{h}</span>
               ))}
             </div>
 
             {/* Rows */}
             {filteredTags.map((tag, i) => (
-                <div
-                  key={tag.id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 100px 140px',
-                    padding: '14px 18px',
-                    borderBottom: i < filteredTags.length - 1 ? '1px solid var(--ivory-tint)' : 'none',
-                    alignItems: 'center',
-                    gap: 12,
-                    backgroundColor: i % 2 === 0 ? 'var(--white)' : 'var(--ivory)',
-                  }}
-                >
-                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--graphite)' }}>
-                    {tag.label}
-                  </span>
+              <div
+                key={tag.id}
+                className={cn(
+                  'grid grid-cols-[1fr_100px_140px] py-3.5 px-[18px] items-center gap-3 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                  i < filteredTags.length - 1 && 'border-b border-ivory-tint',
+                  i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint'
+                )}
+              >
+                <span className="text-sm font-medium text-graphite">{tag.label}</span>
 
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '3px 10px',
-                      borderRadius: 999,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      backgroundColor: tag.isActive ? '#DCFCE7' : '#F3F4F6',
-                      color: tag.isActive ? '#15803D' : '#6B7280',
-                      width: 'fit-content',
-                    }}
+                <StatusBadge status={tag.isActive ? 'active' : 'inactive'} />
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => openEdit(tag)}
+                    className="btn-secondary py-1 px-3 text-[13px]"
                   >
-                    {tag.isActive ? 'Active' : 'Inactive'}
-                  </span>
-
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => openEdit(tag)}
-                      style={{
-                        background: 'none',
-                        border: '1px solid var(--ivory-tint)',
-                        borderRadius: 6,
-                        padding: '5px 12px',
-                        fontSize: 13,
-                        color: 'var(--graphite)',
-                        cursor: 'pointer',
-                        fontFamily: 'var(--font-primary)',
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => void handleToggleActive(tag)}
-                      style={{
-                        background: 'none',
-                        border: '1px solid var(--ivory-tint)',
-                        borderRadius: 6,
-                        padding: '5px 12px',
-                        fontSize: 13,
-                        color: tag.isActive ? '#B91C1C' : '#15803D',
-                        cursor: 'pointer',
-                        fontFamily: 'var(--font-primary)',
-                      }}
-                    >
-                      {tag.isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                  </div>
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => void handleToggleActive(tag)}
+                    className={cn(
+                      'py-1 px-3 text-[13px]',
+                      tag.isActive ? 'btn-wine' : 'btn-secondary'
+                    )}
+                  >
+                    {tag.isActive ? 'Deactivate' : 'Activate'}
+                  </button>
                 </div>
+              </div>
             ))}
           </div>
         )}

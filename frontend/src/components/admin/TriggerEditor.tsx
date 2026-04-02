@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,44 +54,6 @@ function emptyTrigger(): FollowupTrigger {
 }
 
 const TRIGGER_TYPES: TriggerType[] = ['keyword', 'sentiment', 'length', 'always'];
-
-// ---------------------------------------------------------------------------
-// Shared micro-styles
-// ---------------------------------------------------------------------------
-
-const fieldLabel: React.CSSProperties = {
-  display: 'block',
-  fontSize: 11,
-  fontWeight: 600,
-  color: 'var(--grey)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.06em',
-  marginBottom: 6,
-};
-
-const textInput: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 12px',
-  borderRadius: 6,
-  border: '1px solid var(--ivory-tint)',
-  backgroundColor: 'var(--ivory-tint)',
-  fontFamily: 'var(--font-primary)',
-  fontSize: 13,
-  color: 'var(--graphite)',
-  outline: 'none',
-};
-
-const toggleBtnStyle: React.CSSProperties = {
-  padding: '5px 12px',
-  borderRadius: 6,
-  border: '1px dashed var(--ivory-tint)',
-  backgroundColor: 'transparent',
-  color: 'var(--grey)',
-  fontFamily: 'var(--font-primary)',
-  fontSize: 12,
-  fontWeight: 500,
-  cursor: 'pointer',
-};
 
 // ---------------------------------------------------------------------------
 // TriggerEditor
@@ -257,53 +220,22 @@ export default function TriggerEditor({
   const mergedTargets = getMergedTargets();
 
   return (
-    <div
-      style={{
-        padding: 16,
-        backgroundColor: '#F9F7F3',
-        borderRadius: 8,
-        border: '1px solid var(--ivory-tint)',
-      }}
-    >
+    <div className="p-4 bg-[#F9F7F3] rounded border border-ivory-tint">
       {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <h4
-          style={{
-            fontFamily: 'var(--font-primary)',
-            fontWeight: 600,
-            fontSize: 14,
-            color: 'var(--graphite)',
-          }}
-        >
+      <div className="flex justify-between items-center mb-3.5">
+        <h4 className="font-primary font-semibold text-sm text-graphite">
           Follow-up Triggers
         </h4>
         <button
           onClick={addTrigger}
-          style={{
-            padding: '5px 13px',
-            borderRadius: 6,
-            border: '1px dashed var(--horizon-red)',
-            backgroundColor: 'transparent',
-            color: 'var(--horizon-red)',
-            fontFamily: 'var(--font-primary)',
-            fontSize: 12,
-            fontWeight: 500,
-            cursor: 'pointer',
-          }}
+          className="px-3 py-1 rounded border border-dashed border-horizon-red bg-transparent text-horizon-red font-primary text-xs font-medium cursor-pointer hover:bg-horizon-red/5"
         >
           + Add Trigger
         </button>
       </div>
 
       {triggers.length === 0 && (
-        <p style={{ color: 'var(--grey)', fontSize: 13, marginBottom: 14 }}>
+        <p className="text-grey text-[13px] mb-3.5">
           No triggers configured. The LLM will not be prompted to ask follow-ups
           unless you add trigger conditions here.
         </p>
@@ -312,79 +244,38 @@ export default function TriggerEditor({
       {triggers.map((trigger, idx) => (
         <div
           key={idx}
-          style={{
-            backgroundColor: 'var(--white)',
-            borderRadius: 8,
-            border: '1px solid var(--ivory-tint)',
-            padding: 14,
-            marginBottom: 10,
-          }}
+          className="bg-white rounded border border-ivory-tint p-3.5 mb-2.5"
         >
           {/* Trigger header row */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 12,
-            }}
-          >
-            <span
-              style={{
-                fontFamily: 'var(--font-primary)',
-                fontWeight: 500,
-                fontSize: 13,
-                color: 'var(--graphite)',
-              }}
-            >
+          <div className="flex justify-between items-center mb-3">
+            <span className="font-primary font-medium text-[13px] text-graphite">
               Trigger {idx + 1}
             </span>
             <button
               onClick={() => removeTrigger(idx)}
               aria-label="Remove trigger"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--grey)',
-                cursor: 'pointer',
-                fontSize: 16,
-                padding: '0 4px',
-                lineHeight: 1,
-              }}
+              className="bg-transparent border-none text-grey cursor-pointer text-base px-1 py-0 leading-none hover:text-horizon-red"
             >
               ×
             </button>
           </div>
 
           {/* Trigger type selector */}
-          <div style={{ marginBottom: 12 }}>
-            <label style={fieldLabel}>Trigger Type</label>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="mb-3">
+            <label className="block text-2xs font-semibold text-grey uppercase tracking-wide mb-1.5">
+              Trigger Type
+            </label>
+            <div className="flex gap-2 flex-wrap">
               {TRIGGER_TYPES.map((type) => (
                 <button
                   key={type}
                   onClick={() => updateTrigger(idx, { type })}
-                  style={{
-                    padding: '5px 14px',
-                    borderRadius: 999,
-                    border:
-                      trigger.type === type
-                        ? '1.5px solid var(--horizon-red)'
-                        : '1.5px solid var(--ivory-tint)',
-                    backgroundColor:
-                      trigger.type === type
-                        ? 'rgba(122,14,19,0.07)'
-                        : 'var(--white)',
-                    color:
-                      trigger.type === type
-                        ? 'var(--horizon-red)'
-                        : 'var(--graphite)',
-                    fontFamily: 'var(--font-primary)',
-                    fontSize: 13,
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    textTransform: 'capitalize',
-                  }}
+                  className={cn(
+                    'px-3.5 py-1 rounded-md font-primary text-[13px] font-medium cursor-pointer capitalize',
+                    trigger.type === type
+                      ? 'border-[1.5px] border-horizon-red bg-horizon-red/[0.07] text-horizon-red'
+                      : 'border-[1.5px] border-ivory-tint bg-white text-graphite hover:border-grey/30'
+                  )}
                 >
                   {type}
                 </button>
@@ -394,32 +285,32 @@ export default function TriggerEditor({
 
           {/* Keyword input */}
           {trigger.type === 'keyword' && (
-            <div style={{ marginBottom: 12 }}>
-              <label style={fieldLabel}>Keywords / Phrases (LLM guidance)</label>
+            <div className="mb-3">
+              <label className="block text-2xs font-semibold text-grey uppercase tracking-wide mb-1.5">
+                Keywords / Phrases (LLM guidance)
+              </label>
               <input
                 type="text"
                 value={trigger.keywords ?? ''}
                 onChange={(e) => updateTrigger(idx, { keywords: e.target.value })}
-                placeholder="e.g. conflict, leadership challenge, under pressure…"
-                style={textInput}
+                placeholder="e.g. conflict, leadership challenge, under pressure..."
+                className="input-field text-sm"
               />
             </div>
           )}
 
           {/* Sentiment dropdown */}
           {trigger.type === 'sentiment' && (
-            <div style={{ marginBottom: 12 }}>
-              <label style={fieldLabel}>Sentiment Direction</label>
+            <div className="mb-3">
+              <label className="block text-2xs font-semibold text-grey uppercase tracking-wide mb-1.5">
+                Sentiment Direction
+              </label>
               <select
                 value={trigger.sentiment ?? 'positive'}
                 onChange={(e) =>
                   updateTrigger(idx, { sentiment: e.target.value as SentimentValue })
                 }
-                style={{
-                  ...textInput,
-                  width: 'auto',
-                  cursor: 'pointer',
-                }}
+                className="input-field text-sm w-auto cursor-pointer"
               >
                 <option value="positive">Positive</option>
                 <option value="negative">Negative</option>
@@ -430,25 +321,29 @@ export default function TriggerEditor({
 
           {/* Length description */}
           {trigger.type === 'length' && (
-            <div style={{ marginBottom: 12 }}>
-              <label style={fieldLabel}>Length Threshold (LLM guidance)</label>
+            <div className="mb-3">
+              <label className="block text-2xs font-semibold text-grey uppercase tracking-wide mb-1.5">
+                Length Threshold (LLM guidance)
+              </label>
               <input
                 type="text"
                 value={trigger.lengthDescription ?? ''}
                 onChange={(e) =>
                   updateTrigger(idx, { lengthDescription: e.target.value })
                 }
-                placeholder="e.g. response is very brief, answer is unusually long…"
-                style={textInput}
+                placeholder="e.g. response is very brief, answer is unusually long..."
+                className="input-field text-sm"
               />
             </div>
           )}
 
           {/* Target questions */}
           <div>
-            <label style={fieldLabel}>Suggested Follow-up Questions</label>
+            <label className="block text-2xs font-semibold text-grey uppercase tracking-wide mb-1.5">
+              Suggested Follow-up Questions
+            </label>
             {mergedTargets.length === 0 && !hasBankFeature ? (
-              <p style={{ color: 'var(--grey)', fontSize: 13 }}>
+              <p className="text-grey text-[13px]">
                 No other questions in this template.
               </p>
             ) : (
@@ -457,14 +352,7 @@ export default function TriggerEditor({
                 {mergedTargets.length > 0 && (
                   <div
                     ref={targetListRef}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 4,
-                      maxHeight: 180,
-                      overflowY: 'auto',
-                      marginBottom: 8,
-                    }}
+                    className="flex flex-col gap-1 max-h-[180px] overflow-y-auto mb-2"
                   >
                     {mergedTargets.map((target) => {
                       const selected = (trigger.targetTemplateQuestionIds ?? []).includes(
@@ -473,47 +361,25 @@ export default function TriggerEditor({
                       return (
                         <label
                           key={target.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: 8,
-                            padding: '6px 8px',
-                            borderRadius: 6,
-                            cursor: 'pointer',
-                            backgroundColor: selected
-                              ? 'rgba(122,14,19,0.05)'
-                              : 'transparent',
-                            border: selected
-                              ? '1px solid rgba(122,14,19,0.2)'
-                              : '1px solid transparent',
-                            fontSize: 13,
-                            color: 'var(--graphite)',
-                            userSelect: 'none',
-                          }}
+                          className={cn(
+                            'flex items-start gap-2 py-1.5 px-2 rounded cursor-pointer text-[13px] text-graphite select-none',
+                            selected
+                              ? 'bg-horizon-red/5 border border-horizon-red/20'
+                              : 'bg-transparent border border-transparent hover:bg-ivory-tint/50'
+                          )}
                         >
                           <input
                             type="checkbox"
                             checked={selected}
                             onChange={() => toggleTarget(idx, target.id)}
-                            style={{
-                              accentColor: 'var(--horizon-red)',
-                              marginTop: 2,
-                              flexShrink: 0,
-                            }}
+                            className="accent-horizon-red mt-0.5 shrink-0"
                           />
                           <span>
-                            <span
-                              style={{
-                                color: 'var(--grey)',
-                                fontSize: 11,
-                                marginRight: 6,
-                                fontFamily: 'var(--font-mono)',
-                              }}
-                            >
+                            <span className="text-grey text-2xs mr-1.5 font-mono">
                               #{target.sequenceOrder}
                             </span>
                             {target.questionText.length > 90
-                              ? target.questionText.slice(0, 90) + '…'
+                              ? target.questionText.slice(0, 90) + '\u2026'
                               : target.questionText}
                           </span>
                         </label>
@@ -524,7 +390,7 @@ export default function TriggerEditor({
 
                 {/* Add from Question Bank */}
                 {hasBankFeature && (
-                  <div style={{ marginTop: 4 }}>
+                  <div className="mt-1">
                     <button
                       onClick={() => {
                         setShowBankPanel(showBankPanel === idx ? null : idx);
@@ -532,56 +398,41 @@ export default function TriggerEditor({
                         setBankSearchText('');
                         onBankSearch?.('');
                       }}
-                      style={{
-                        ...toggleBtnStyle,
-                        color: showBankPanel === idx ? 'var(--horizon-red)' : 'var(--grey)',
-                        borderColor: showBankPanel === idx ? 'var(--horizon-red)' : 'var(--ivory-tint)',
-                      }}
+                      className={cn(
+                        'px-3 py-1 rounded border border-dashed font-primary text-xs font-medium cursor-pointer',
+                        showBankPanel === idx
+                          ? 'text-horizon-red border-horizon-red'
+                          : 'text-grey border-ivory-tint hover:border-grey/30'
+                      )}
                     >
                       {showBankPanel === idx ? '− Close Search' : '+ Add from Question Bank'}
                     </button>
 
                     {showBankPanel === idx && (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          padding: 10,
-                          backgroundColor: 'var(--ivory)',
-                          borderRadius: 6,
-                          border: '1px solid var(--ivory-tint)',
-                        }}
-                      >
+                      <div className="mt-2 p-2.5 bg-ivory rounded border border-ivory-tint">
                         <input
                           type="text"
                           value={bankSearchText}
                           onChange={(e) => handleBankSearchChange(e.target.value)}
-                          placeholder="Search all questions…"
+                          placeholder="Search all questions..."
                           autoFocus
-                          style={{ ...textInput, marginBottom: 8 }}
+                          className="input-field text-sm mb-2"
                         />
 
                         {bankLoading && (
-                          <p style={{ color: 'var(--grey)', fontSize: 12, padding: '8px 0' }}>
-                            Searching…
+                          <p className="text-grey text-xs py-2">
+                            Searching...
                           </p>
                         )}
 
                         {!bankLoading && bankSearchText && bankResults && bankResults.length === 0 && (
-                          <p style={{ color: 'var(--grey)', fontSize: 12, padding: '8px 0' }}>
+                          <p className="text-grey text-xs py-2">
                             No questions found.
                           </p>
                         )}
 
                         {!bankLoading && bankResults && bankResults.length > 0 && (
-                          <div
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 4,
-                              maxHeight: 200,
-                              overflowY: 'auto',
-                            }}
-                          >
+                          <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto">
                             {bankResults.map((q) => {
                               const inTemplate = templateQuestionIds?.has(q.id);
                               return (
@@ -589,44 +440,23 @@ export default function TriggerEditor({
                                   key={q.id}
                                   onClick={() => void handleSelectFromBank(q, idx)}
                                   disabled={addingExternalQuestion}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'flex-start',
-                                    gap: 8,
-                                    padding: '8px 10px',
-                                    borderRadius: 6,
-                                    border: '1px solid var(--ivory-tint)',
-                                    backgroundColor: 'var(--white)',
-                                    cursor: addingExternalQuestion ? 'wait' : 'pointer',
-                                    textAlign: 'left',
-                                    fontFamily: 'var(--font-primary)',
-                                    fontSize: 13,
-                                    color: 'var(--graphite)',
-                                    width: '100%',
-                                  }}
+                                  className={cn(
+                                    'flex items-start gap-2 py-2 px-2.5 rounded border border-ivory-tint bg-white text-left font-primary text-[13px] text-graphite w-full',
+                                    addingExternalQuestion
+                                      ? 'cursor-wait'
+                                      : 'cursor-pointer hover:border-grey/30 hover:bg-ivory-tint/30'
+                                  )}
                                 >
-                                  <div style={{ flex: 1 }}>
+                                  <div className="flex-1">
                                     <span>
-                                      {q.text.length > 100 ? q.text.slice(0, 100) + '…' : q.text}
+                                      {q.text.length > 100 ? q.text.slice(0, 100) + '\u2026' : q.text}
                                     </span>
-                                    <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
-                                      <span
-                                        style={{
-                                          fontSize: 11,
-                                          color: 'var(--grey)',
-                                          fontStyle: 'italic',
-                                        }}
-                                      >
+                                    <div className="flex gap-1.5 mt-0.5">
+                                      <span className="text-2xs text-grey italic">
                                         {q.category}
                                       </span>
                                       {inTemplate && (
-                                        <span
-                                          style={{
-                                            fontSize: 10,
-                                            color: '#15803D',
-                                            fontWeight: 600,
-                                          }}
-                                        >
+                                        <span className="text-[10px] text-green-700 font-semibold">
                                           in template
                                         </span>
                                       )}
@@ -639,8 +469,8 @@ export default function TriggerEditor({
                         )}
 
                         {addingExternalQuestion && (
-                          <p style={{ color: 'var(--grey)', fontSize: 12, marginTop: 6 }}>
-                            Adding to template…
+                          <p className="text-grey text-xs mt-1.5">
+                            Adding to template...
                           </p>
                         )}
                       </div>
@@ -650,7 +480,7 @@ export default function TriggerEditor({
 
                 {/* Create New Question */}
                 {hasCreateFeature && (
-                  <div style={{ marginTop: 6 }}>
+                  <div className="mt-1.5">
                     <button
                       onClick={() => {
                         setShowCreateForm(showCreateForm === idx ? null : idx);
@@ -658,43 +488,40 @@ export default function TriggerEditor({
                         setNewQuestionText('');
                         setNewQuestionCategory('');
                       }}
-                      style={{
-                        ...toggleBtnStyle,
-                        color: showCreateForm === idx ? 'var(--horizon-red)' : 'var(--grey)',
-                        borderColor: showCreateForm === idx ? 'var(--horizon-red)' : 'var(--ivory-tint)',
-                      }}
+                      className={cn(
+                        'px-3 py-1 rounded border border-dashed font-primary text-xs font-medium cursor-pointer',
+                        showCreateForm === idx
+                          ? 'text-horizon-red border-horizon-red'
+                          : 'text-grey border-ivory-tint hover:border-grey/30'
+                      )}
                     >
                       {showCreateForm === idx ? '− Cancel Create' : '+ Create New Question'}
                     </button>
 
                     {showCreateForm === idx && (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          padding: 10,
-                          backgroundColor: 'var(--ivory)',
-                          borderRadius: 6,
-                          border: '1px solid var(--ivory-tint)',
-                        }}
-                      >
-                        <div style={{ marginBottom: 8 }}>
-                          <label style={fieldLabel}>Question Text *</label>
+                      <div className="mt-2 p-2.5 bg-ivory rounded border border-ivory-tint">
+                        <div className="mb-2">
+                          <label className="block text-2xs font-semibold text-grey uppercase tracking-wide mb-1.5">
+                            Question Text *
+                          </label>
                           <textarea
                             value={newQuestionText}
                             onChange={(e) => setNewQuestionText(e.target.value)}
-                            placeholder="Enter the question text…"
+                            placeholder="Enter the question text..."
                             rows={3}
-                            style={{ ...textInput, resize: 'vertical' }}
+                            className="input-field text-sm resize-y"
                           />
                         </div>
-                        <div style={{ marginBottom: 10 }}>
-                          <label style={fieldLabel}>Category *</label>
+                        <div className="mb-2.5">
+                          <label className="block text-2xs font-semibold text-grey uppercase tracking-wide mb-1.5">
+                            Category *
+                          </label>
                           <input
                             type="text"
                             value={newQuestionCategory}
                             onChange={(e) => setNewQuestionCategory(e.target.value)}
-                            placeholder="e.g. experience, process, motivation…"
-                            style={textInput}
+                            placeholder="e.g. experience, process, motivation..."
+                            className="input-field text-sm"
                           />
                         </div>
                         <button
@@ -704,30 +531,13 @@ export default function TriggerEditor({
                             !newQuestionText.trim() ||
                             !newQuestionCategory.trim()
                           }
-                          style={{
-                            padding: '6px 16px',
-                            borderRadius: 6,
-                            border: 'none',
-                            backgroundColor: 'var(--horizon-red)',
-                            color: 'var(--white)',
-                            fontFamily: 'var(--font-primary)',
-                            fontWeight: 600,
-                            fontSize: 12,
-                            cursor:
-                              creatingQuestion ||
-                              !newQuestionText.trim() ||
-                              !newQuestionCategory.trim()
-                                ? 'not-allowed'
-                                : 'pointer',
-                            opacity:
-                              creatingQuestion ||
-                              !newQuestionText.trim() ||
-                              !newQuestionCategory.trim()
-                                ? 0.5
-                                : 1,
-                          }}
+                          className={cn(
+                            'btn-primary text-xs py-1.5 px-4',
+                            (creatingQuestion || !newQuestionText.trim() || !newQuestionCategory.trim())
+                              && 'opacity-50 cursor-not-allowed'
+                          )}
                         >
-                          {creatingQuestion ? 'Creating…' : 'Create & Add'}
+                          {creatingQuestion ? 'Creating...' : 'Create & Add'}
                         </button>
                       </div>
                     )}

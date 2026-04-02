@@ -2,6 +2,7 @@
 
 import { useState, useRef, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
 import type {
   InterviewState,
   InterviewSession,
@@ -26,17 +27,8 @@ interface Props {
 
 function LoadingScreen({ message }: { message: string }) {
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'var(--ivory)',
-        fontFamily: 'var(--font-primary)',
-      }}
-    >
-      <p style={{ color: 'var(--grey)', fontSize: 16 }}>{message}</p>
+    <div className="min-h-screen flex items-center justify-center bg-ivory">
+      <p className="text-grey text-base">{message}</p>
     </div>
   );
 }
@@ -57,13 +49,10 @@ export default function InterviewUI({ state, session, actions }: Props) {
     e.target.style.height = `${e.target.scrollHeight}px`;
   };
 
-  // ---- Event handlers ----
-
   const handleSend = async () => {
     const text = inputText.trim();
     if (!text) return;
     setInputText('');
-    // Reset heights after clearing
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     if (finalThoughtRef.current) finalThoughtRef.current.style.height = 'auto';
     await actions.submitText(text);
@@ -100,69 +89,22 @@ export default function InterviewUI({ state, session, actions }: Props) {
 
   if (state === 'READY') {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'var(--ivory)',
-          fontFamily: 'var(--font-primary)',
-          padding: 24,
-          textAlign: 'center',
-        }}
-      >
-        <div style={{ maxWidth: 480 }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-hero)',
-              fontSize: 20,
-              color: 'var(--graphite)',
-              display: 'block',
-              marginBottom: 32,
-            }}
-          >
+      <div className="min-h-screen flex flex-col items-center justify-center bg-ivory p-6 text-center">
+        <div className="max-w-[480px]">
+          <span className="font-hero text-xl text-graphite block mb-8">
             Arena
           </span>
-          <h1
-            style={{
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 26,
-              color: 'var(--graphite)',
-              marginBottom: 12,
-              letterSpacing: '-0.01em',
-            }}
-          >
+          <h1 className="font-semibold text-[26px] text-graphite mb-3 tracking-[-0.01em]">
             Ready to begin?
           </h1>
-          <p
-            style={{
-              color: 'var(--grey)',
-              fontSize: 16,
-              lineHeight: 1.6,
-              marginBottom: 40,
-            }}
-          >
+          <p className="text-grey text-base leading-relaxed mb-10">
             When you click Start, your interview will begin. Take your time and
             answer each question as fully as you like. You can type your
             responses or skip questions.
           </p>
           <button
             onClick={() => void actions.startInterview()}
-            style={{
-              padding: '14px 44px',
-              borderRadius: 999,
-              border: 'none',
-              backgroundColor: 'var(--horizon-red)',
-              color: 'var(--white)',
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 15,
-              cursor: 'pointer',
-              letterSpacing: '0.01em',
-            }}
+            className="btn-primary py-3.5 px-11 text-[15px]"
           >
             Start Interview
           </button>
@@ -192,83 +134,32 @@ export default function InterviewUI({ state, session, actions }: Props) {
   if (state === 'PAUSED' || state === 'AUTO_PAUSED') {
     const isAuto = state === 'AUTO_PAUSED';
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'var(--ivory)',
-          fontFamily: 'var(--font-primary)',
-          padding: 24,
-          textAlign: 'center',
-        }}
-      >
-        <div style={{ maxWidth: 480 }}>
-          <h2
-            style={{
-              fontWeight: 600,
-              fontSize: 22,
-              color: 'var(--graphite)',
-              marginBottom: 12,
-            }}
-          >
+      <div className="min-h-screen flex flex-col items-center justify-center bg-ivory p-6 text-center">
+        <div className="max-w-[480px]">
+          <h2 className="font-semibold text-[22px] text-graphite mb-3">
             Interview Paused
           </h2>
-          <p
-            style={{
-              color: 'var(--grey)',
-              fontSize: 16,
-              lineHeight: 1.6,
-              marginBottom: isAuto ? 8 : 40,
-            }}
-          >
+          <p className={cn('text-grey text-base leading-relaxed', isAuto ? 'mb-2' : 'mb-10')}>
             {isAuto
               ? 'Your interview was paused due to inactivity.'
               : 'Your progress has been saved.'}
           </p>
           {isAuto && (
-            <p style={{ color: 'var(--grey)', fontSize: 14, marginBottom: 40 }}>
+            <p className="text-grey text-sm mb-10">
               Click Resume when you are ready to continue. You have 72 hours
               before this session expires.
             </p>
           )}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-              alignItems: 'center',
-            }}
-          >
+          <div className="flex flex-col gap-3 items-center">
             <button
               onClick={() => void actions.resumeInterview()}
-              style={{
-                padding: '12px 32px',
-                borderRadius: 999,
-                border: 'none',
-                backgroundColor: 'var(--horizon-red)',
-                color: 'var(--white)',
-                fontFamily: 'var(--font-primary)',
-                fontWeight: 600,
-                fontSize: 15,
-                cursor: 'pointer',
-              }}
+              className="btn-primary py-3 px-8 text-[15px]"
             >
               Resume Interview
             </button>
             <button
               onClick={() => router.push('/')}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--grey)',
-                fontFamily: 'var(--font-primary)',
-                fontSize: 14,
-                cursor: 'pointer',
-                textDecoration: 'underline',
-              }}
+              className="btn-ghost underline text-sm"
             >
               Back to Home
             </button>
@@ -280,68 +171,24 @@ export default function InterviewUI({ state, session, actions }: Props) {
 
   if (state === 'ERROR') {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'var(--ivory)',
-          fontFamily: 'var(--font-primary)',
-          padding: 24,
-          textAlign: 'center',
-        }}
-      >
-        <div style={{ maxWidth: 480 }}>
-          <h2
-            style={{
-              fontWeight: 600,
-              fontSize: 22,
-              color: 'var(--horizon-red)',
-              marginBottom: 12,
-            }}
-          >
+      <div className="min-h-screen flex flex-col items-center justify-center bg-ivory p-6 text-center">
+        <div className="max-w-[480px]">
+          <h2 className="font-semibold text-[22px] text-horizon-red mb-3">
             Something went wrong
           </h2>
-          <p style={{ color: 'var(--grey)', fontSize: 15, marginBottom: 32 }}>
+          <p className="text-grey text-[15px] mb-8">
             {session.errorMessage ?? 'An unexpected error occurred.'}
           </p>
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-              alignItems: 'center',
-            }}
-          >
+          <div className="flex flex-col gap-3 items-center">
             <button
               onClick={() => window.location.reload()}
-              style={{
-                padding: '12px 32px',
-                borderRadius: 999,
-                border: 'none',
-                backgroundColor: 'var(--horizon-red)',
-                color: 'var(--white)',
-                fontFamily: 'var(--font-primary)',
-                fontWeight: 600,
-                fontSize: 15,
-                cursor: 'pointer',
-              }}
+              className="btn-primary py-3 px-8 text-[15px]"
             >
               Retry
             </button>
             <button
               onClick={() => router.push('/')}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--grey)',
-                fontFamily: 'var(--font-primary)',
-                fontSize: 14,
-                cursor: 'pointer',
-                textDecoration: 'underline',
-              }}
+              className="btn-ghost underline text-sm"
             >
               Back to Home
             </button>
@@ -353,8 +200,6 @@ export default function InterviewUI({ state, session, actions }: Props) {
 
   // =========================================================================
   // Main interview layout
-  // States: LLM_STREAMING, AWAITING_INPUT, PROCESSING, SKIPPING, COMPLETING,
-  //         IDLE_WARNING
   // =========================================================================
 
   const isInputEnabled =
@@ -366,16 +211,12 @@ export default function InterviewUI({ state, session, actions }: Props) {
   const isThinking = state === 'PROCESSING' || state === 'SKIPPING';
   const isCompleting = state === 'COMPLETING';
 
-  // Pause is only valid from AWAITING_INPUT / IDLE_WARNING
   const canPause = state === 'AWAITING_INPUT' || state === 'IDLE_WARNING';
-  // End is valid from AWAITING_INPUT, IDLE_WARNING, and COMPLETING
   const canEnd =
     state === 'AWAITING_INPUT' ||
     state === 'IDLE_WARNING' ||
     state === 'COMPLETING';
 
-  // During thinking states show only the ellipsis; the old question text has
-  // already moved to the transcript, and the new question hasn't arrived yet.
   const questionPanelText = isStreaming
     ? session.streamingText
     : isThinking
@@ -383,94 +224,45 @@ export default function InterviewUI({ state, session, actions }: Props) {
     : session.currentQuestion;
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        backgroundColor: 'var(--ivory)',
-        fontFamily: 'var(--font-primary)',
-      }}
-    >
+    <div className="flex flex-col h-screen bg-ivory">
       {/* ---- Header ---- */}
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-          padding: '12px 24px',
-          borderBottom: '1px solid var(--ivory-tint)',
-          backgroundColor: 'var(--white)',
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            fontFamily: 'var(--font-hero)',
-            fontSize: 18,
-            color: 'var(--graphite)',
-          }}
-        >
-          Arena
-        </span>
+      <header className="flex items-center gap-4 py-3 px-6 border-b border-ivory-tint bg-white shrink-0">
+        <span className="font-hero text-lg text-graphite">Arena</span>
 
         {/* Progress bar */}
         <div
-          style={{
-            flex: 1,
-            height: 4,
-            backgroundColor: 'var(--ivory-tint)',
-            borderRadius: 2,
-            overflow: 'hidden',
-          }}
+          className="flex-1 h-1 bg-ivory-tint rounded overflow-hidden"
           role="progressbar"
           aria-valuenow={session.progressPercent}
           aria-valuemin={0}
           aria-valuemax={100}
         >
           <div
+            className="h-full bg-horizon-red rounded"
             style={{
-              height: '100%',
               width: `${session.progressPercent}%`,
-              backgroundColor: 'var(--horizon-red)',
-              borderRadius: 2,
               transition: 'width 0.4s ease',
             }}
           />
         </div>
 
-        {/* Header controls — always visible; disabled when interaction not available */}
         <button
           onClick={canPause ? () => void handlePause() : undefined}
           disabled={!canPause}
-          style={{
-            background: 'none',
-            border: '1px solid var(--ivory-tint)',
-            borderRadius: 6,
-            padding: '6px 14px',
-            color: 'var(--grey)',
-            fontFamily: 'var(--font-primary)',
-            fontSize: 13,
-            cursor: canPause ? 'pointer' : 'default',
-            opacity: canPause ? 1 : 0.35,
-            transition: 'opacity 0.15s',
-          }}
+          className={cn(
+            'btn-secondary py-1.5 px-3.5 text-[13px] text-grey',
+            !canPause && 'opacity-35 cursor-default'
+          )}
         >
           Pause
         </button>
         <button
           onClick={canEnd ? () => void handleEnd() : undefined}
           disabled={!canEnd}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--grey)',
-            fontFamily: 'var(--font-primary)',
-            fontSize: 13,
-            cursor: canEnd ? 'pointer' : 'default',
-            opacity: canEnd ? 1 : 0.35,
-            transition: 'opacity 0.15s',
-          }}
+          className={cn(
+            'btn-ghost text-[13px]',
+            !canEnd && 'opacity-35 cursor-default'
+          )}
         >
           End Interview
         </button>
@@ -478,74 +270,29 @@ export default function InterviewUI({ state, session, actions }: Props) {
 
       {/* ---- Idle warning banner ---- */}
       {state === 'IDLE_WARNING' && session.idlePrompt && (
-        <div
-          role="status"
-          style={{
-            padding: '10px 24px',
-            backgroundColor: '#FEF3C7',
-            borderBottom: '1px solid #FDE68A',
-            flexShrink: 0,
-          }}
-        >
-          <p style={{ color: '#92400E', fontSize: 14 }}>{session.idlePrompt}</p>
+        <div role="status" className="alert-warning py-2.5 px-6 border-b border-grey/30 rounded-none shrink-0">
+          <p className="text-sm text-graphite">{session.idlePrompt}</p>
         </div>
       )}
 
       {/* ---- Current question panel ---- */}
-      <div
-        style={{
-          backgroundColor: 'var(--dark-maroon)',
-          padding: '28px 32px',
-          flexShrink: 0,
-          position: 'relative',
-          minHeight: 100,
-        }}
-      >
-        <p
-          style={{
-            color: 'var(--ivory)',
-            fontFamily: 'var(--font-primary)',
-            fontWeight: 400,
-            fontSize: 18,
-            lineHeight: 1.65,
-            paddingRight: 72, // room for skip button
-          }}
-        >
+      <div className="bg-dark-maroon py-7 px-8 shrink-0 relative" style={{ minHeight: 100 }}>
+        <p className="text-ivory text-lg leading-relaxed pr-[72px]">
           {questionPanelText || '\u00a0'}
           {isStreaming && questionPanelText && (
-            <span
-              style={{
-                display: 'inline-block',
-                width: 2,
-                height: '1.1em',
-                backgroundColor: 'var(--ivory)',
-                marginLeft: 2,
-                verticalAlign: 'text-bottom',
-                animation: 'arena-blink 1s step-end infinite',
-              }}
-            />
+            <span className="inline-block w-0.5 h-[1.1em] bg-ivory ml-0.5 align-text-bottom animate-arena-blink" />
           )}
           {isThinking && (
-            <span style={{ color: 'rgba(245,242,236,0.5)' }}>···</span>
+            <span className="text-ivory/50">···</span>
           )}
         </p>
 
-        {/* Skip button — available only when awaiting input */}
+        {/* Skip button */}
         {(state === 'AWAITING_INPUT' || state === 'IDLE_WARNING') && (
           <button
             onClick={() => void actions.skipQuestion()}
-            style={{
-              position: 'absolute',
-              bottom: 16,
-              right: 24,
-              background: 'none',
-              border: 'none',
-              color: 'rgba(245,242,236,0.5)',
-              fontFamily: 'var(--font-primary)',
-              fontSize: 13,
-              cursor: 'pointer',
-              padding: '4px 8px',
-            }}
+            className="absolute bottom-4 right-6 bg-transparent border-none text-ivory/50 text-[13px]
+                       cursor-pointer p-1 px-2 hover:text-ivory transition-colors duration-150"
           >
             Skip
           </button>
@@ -556,18 +303,10 @@ export default function InterviewUI({ state, session, actions }: Props) {
       <TranscriptArea transcript={session.transcript} />
 
       {/* ---- Input area ---- */}
-      <div
-        style={{
-          padding: '16px 24px',
-          borderTop: '1px solid var(--ivory-tint)',
-          backgroundColor: 'var(--white)',
-          flexShrink: 0,
-        }}
-      >
+      <div className="py-4 px-6 border-t border-ivory-tint bg-white shrink-0">
         {isCompleting ? (
-          /* COMPLETING: show optional final-thought input + primary Finish button */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-2.5 items-end">
               <textarea
                 ref={finalThoughtRef}
                 value={inputText}
@@ -575,62 +314,28 @@ export default function InterviewUI({ state, session, actions }: Props) {
                 onKeyDown={handleKeyDown}
                 placeholder="Add a final thought (optional)…"
                 rows={1}
-                style={{
-                  flex: 1,
-                  padding: '12px 16px',
-                  borderRadius: 8,
-                  border: '1px solid var(--ivory-tint)',
-                  backgroundColor: 'var(--ivory-tint)',
-                  fontFamily: 'var(--font-primary)',
-                  fontSize: 16,
-                  color: 'var(--graphite)',
-                  outline: 'none',
-                  resize: 'none',
-                  overflow: 'hidden',
-                  lineHeight: '1.5',
-                }}
+                className="input-field flex-1 text-base resize-none overflow-hidden leading-normal border-ivory-tint bg-ivory-tint"
               />
               {inputText.trim() && (
                 <button
                   onClick={() => void handleSend()}
-                  style={{
-                    padding: '12px 20px',
-                    borderRadius: 999,
-                    border: 'none',
-                    backgroundColor: 'var(--horizon-red)',
-                    color: 'var(--white)',
-                    fontFamily: 'var(--font-primary)',
-                    fontWeight: 600,
-                    fontSize: 14,
-                    cursor: 'pointer',
-                  }}
+                  className="btn-primary py-3 px-5 text-sm"
                 >
                   Send
                 </button>
               )}
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div className="flex justify-end">
               <button
                 onClick={() => void actions.endInterview()}
-                style={{
-                  padding: '12px 32px',
-                  borderRadius: 999,
-                  border: 'none',
-                  backgroundColor: 'var(--horizon-red)',
-                  color: 'var(--white)',
-                  fontFamily: 'var(--font-primary)',
-                  fontWeight: 600,
-                  fontSize: 15,
-                  cursor: 'pointer',
-                }}
+                className="btn-primary py-3 px-8 text-[15px]"
               >
                 Finish Interview
               </button>
             </div>
           </div>
         ) : (
-          /* Normal input row */
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          <div className="flex gap-2.5 items-end">
             <textarea
               ref={textareaRef}
               value={inputText}
@@ -639,61 +344,26 @@ export default function InterviewUI({ state, session, actions }: Props) {
               disabled={!isInputEnabled}
               placeholder={isInputEnabled ? 'Type your response…' : 'Waiting…'}
               rows={1}
-              style={{
-                flex: 1,
-                padding: '12px 16px',
-                borderRadius: 8,
-                border: '1px solid var(--ivory-tint)',
-                backgroundColor: isInputEnabled
-                  ? 'var(--ivory-tint)'
-                  : 'var(--ivory)',
-                fontFamily: 'var(--font-primary)',
-                fontSize: 16,
-                color: 'var(--graphite)',
-                outline: 'none',
-                cursor: isInputEnabled ? 'text' : 'not-allowed',
-                opacity: isInputEnabled ? 1 : 0.6,
-                resize: 'none',
-                overflow: 'hidden',
-                lineHeight: '1.5',
-              }}
+              className={cn(
+                'input-field flex-1 text-base resize-none overflow-hidden leading-normal border-ivory-tint',
+                isInputEnabled ? 'bg-ivory-tint' : 'bg-ivory opacity-60 cursor-not-allowed'
+              )}
             />
             <button
               onClick={() => void handleSend()}
               disabled={!isInputEnabled || !inputText.trim()}
-              style={{
-                padding: '12px 24px',
-                borderRadius: 999,
-                border: 'none',
-                backgroundColor:
-                  isInputEnabled && inputText.trim()
-                    ? 'var(--horizon-red)'
-                    : 'var(--ivory-tint)',
-                color:
-                  isInputEnabled && inputText.trim()
-                    ? 'var(--white)'
-                    : 'var(--grey)',
-                fontFamily: 'var(--font-primary)',
-                fontWeight: 600,
-                fontSize: 14,
-                cursor:
-                  isInputEnabled && inputText.trim() ? 'pointer' : 'not-allowed',
-                transition: 'background-color 0.15s ease',
-              }}
+              className={cn(
+                'rounded-md border-none font-semibold text-sm py-3 px-6 transition-colors duration-150',
+                isInputEnabled && inputText.trim()
+                  ? 'bg-horizon-red text-white cursor-pointer'
+                  : 'bg-ivory-tint text-grey cursor-not-allowed'
+              )}
             >
               Send
             </button>
           </div>
         )}
       </div>
-
-      {/* Blinking cursor keyframes */}
-      <style>{`
-        @keyframes arena-blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
-      `}</style>
     </div>
   );
 }

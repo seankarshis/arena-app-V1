@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, gql } from '@apollo/client';
+import { cn } from '@/lib/utils';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import TriggerEditor, { type FollowupTrigger } from './TriggerEditor';
 
 // ---------------------------------------------------------------------------
@@ -226,54 +228,6 @@ function sortedByOrder(qs: TemplateQuestion[]): TemplateQuestion[] {
 }
 
 // ---------------------------------------------------------------------------
-// Shared button / input styles
-// ---------------------------------------------------------------------------
-
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: 8,
-  border: 'none',
-  backgroundColor: 'var(--horizon-red)',
-  color: 'var(--white)',
-  fontFamily: 'var(--font-primary)',
-  fontWeight: 600,
-  fontSize: 14,
-  cursor: 'pointer',
-};
-
-const secondaryBtn: React.CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: 8,
-  border: '1px solid var(--ivory-tint)',
-  backgroundColor: 'var(--white)',
-  color: 'var(--graphite)',
-  fontFamily: 'var(--font-primary)',
-  fontWeight: 500,
-  fontSize: 14,
-  cursor: 'pointer',
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: '10px 14px',
-  borderRadius: 8,
-  border: '1px solid var(--ivory-tint)',
-  backgroundColor: 'var(--ivory-tint)',
-  fontFamily: 'var(--font-primary)',
-  fontSize: 14,
-  color: 'var(--graphite)',
-  outline: 'none',
-  width: '100%',
-};
-
-const colHeader: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 600,
-  color: 'var(--grey)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.07em',
-};
-
-// ---------------------------------------------------------------------------
 // Step indicator
 // ---------------------------------------------------------------------------
 
@@ -295,14 +249,7 @@ function StepIndicator({
   onSelect: (n: number) => void;
 }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        borderBottom: '2px solid var(--ivory-tint)',
-        backgroundColor: 'var(--white)',
-        overflowX: 'auto',
-      }}
-    >
+    <div className="flex border-b-2 border-ivory-tint bg-white overflow-x-auto">
       {STEPS.map((label, i) => {
         const step = i + 1;
         const active = step === current;
@@ -311,49 +258,22 @@ function StepIndicator({
           <button
             key={step}
             onClick={() => onSelect(step)}
-            style={{
-              padding: '14px 18px',
-              border: 'none',
-              borderBottom: active
-                ? '2px solid var(--horizon-red)'
-                : '2px solid transparent',
-              backgroundColor: 'transparent',
-              fontFamily: 'var(--font-primary)',
-              fontSize: 13,
-              fontWeight: active ? 600 : 400,
-              color: active
-                ? 'var(--horizon-red)'
-                : past
-                ? 'var(--graphite)'
-                : 'var(--grey)',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              marginBottom: -2,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 7,
-            }}
+            className={cn(
+              'py-3.5 px-[18px] border-none bg-transparent font-primary text-[13px] cursor-pointer whitespace-nowrap -mb-[2px] flex items-center gap-[7px] border-b-2',
+              active && 'border-b-horizon-red font-semibold text-horizon-red',
+              !active && past && 'border-b-transparent font-normal text-graphite',
+              !active && !past && 'border-b-transparent font-normal text-grey',
+            )}
           >
             <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                fontSize: 11,
-                fontWeight: 700,
-                backgroundColor: active
-                  ? 'var(--horizon-red)'
-                  : past
-                  ? '#DCFCE7'
-                  : 'var(--ivory-tint)',
-                color: active ? 'var(--white)' : past ? '#15803D' : 'var(--grey)',
-                flexShrink: 0,
-              }}
+              className={cn(
+                'inline-flex items-center justify-center w-5 h-5 rounded-full text-2xs font-bold shrink-0',
+                active && 'bg-horizon-red text-white',
+                !active && past && 'bg-graphite text-white',
+                !active && !past && 'bg-ivory-tint text-grey',
+              )}
             >
-              {past ? '✓' : step}
+              {past ? '\u2713' : step}
             </span>
             {label}
           </button>
@@ -398,6 +318,8 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
 
   // Step 3: bucket edits
   const [bucketEdits, setBucketEdits] = useState<Record<string, string>>({});
+  const [creatingBucketFor, setCreatingBucketFor] = useState<string | null>(null);
+  const [newBucketValue, setNewBucketValue] = useState('');
 
   // Step 4: trigger editor
   const [openTriggerFor, setOpenTriggerFor] = useState<string | null>(null);
@@ -611,19 +533,40 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   // Step 3 handlers
   // ---------------------------------------------------------------------------
 
-  const handleBucketChange = (tqId: string, val: string) => {
+  const handleBucketSelect = async (tqId: string, val: string) => {
+    if (val === '__new__') {
+      setCreatingBucketFor(tqId);
+      setNewBucketValue('');
+      return;
+    }
     setBucketEdits((prev) => ({ ...prev, [tqId]: val }));
+    const tq = localQuestions.find((q) => q.id === tqId);
+    if (!tq || tq.categoryBucket === val) return;
+    try {
+      await updateTQ({ variables: { id: tqId, categoryBucket: val } });
+      setLocalQuestions((prev) =>
+        prev.map((q) => (q.id === tqId ? { ...q, categoryBucket: val } : q))
+      );
+    } catch (err) {
+      setPageError((err as Error).message);
+      setBucketEdits((prev) => ({ ...prev, [tqId]: tq.categoryBucket }));
+    }
   };
 
-  const handleBucketBlur = async (tqId: string) => {
-    const newBucket = (bucketEdits[tqId] ?? '').trim();
-    if (!newBucket) return;
+  const handleNewBucketSave = async (tqId: string) => {
+    const val = newBucketValue.trim();
+    if (!val) {
+      setCreatingBucketFor(null);
+      return;
+    }
+    setCreatingBucketFor(null);
+    setBucketEdits((prev) => ({ ...prev, [tqId]: val }));
     const tq = localQuestions.find((q) => q.id === tqId);
-    if (!tq || tq.categoryBucket === newBucket) return;
+    if (!tq || tq.categoryBucket === val) return;
     try {
-      await updateTQ({ variables: { id: tqId, categoryBucket: newBucket } });
+      await updateTQ({ variables: { id: tqId, categoryBucket: val } });
       setLocalQuestions((prev) =>
-        prev.map((q) => (q.id === tqId ? { ...q, categoryBucket: newBucket } : q))
+        prev.map((q) => (q.id === tqId ? { ...q, categoryBucket: val } : q))
       );
     } catch (err) {
       setPageError((err as Error).message);
@@ -798,87 +741,30 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   // ---------------------------------------------------------------------------
 
   const renderStep1 = () => (
-    <div style={{ maxWidth: 580, padding: '32px 0' }}>
-      <div style={{ marginBottom: 20 }}>
-        <label
-          style={{
-            display: 'block',
-            fontWeight: 500,
-            fontSize: 14,
-            color: 'var(--graphite)',
-            marginBottom: 6,
-          }}
-        >
+    <div className="max-w-[580px] py-8">
+      <div className="mb-5">
+        <label className="block font-medium text-sm text-graphite mb-1.5">
           Template Name *
         </label>
         <input
           type="text"
           value={localName}
           onChange={(e) => setLocalName(e.target.value)}
-          style={inputStyle}
+          className="input-field text-sm"
           placeholder="e.g. Senior Engineer Interview — Q2 2026"
         />
       </div>
 
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <label
-            style={{
-              fontWeight: 500,
-              fontSize: 14,
-              color: 'var(--graphite)',
-            }}
-          >
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-1.5">
+          <label className="font-medium text-sm text-graphite">
             Description
           </label>
-          <span style={{ position: 'relative', display: 'inline-flex' }}>
-            <span
-              onMouseEnter={(e) => {
-                const tip = (e.currentTarget.nextSibling as HTMLElement);
-                if (tip) tip.style.display = 'block';
-              }}
-              onMouseLeave={(e) => {
-                const tip = (e.currentTarget.nextSibling as HTMLElement);
-                if (tip) tip.style.display = 'none';
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 16,
-                height: 16,
-                borderRadius: '50%',
-                border: '1px solid var(--graphite)',
-                fontSize: 10,
-                fontWeight: 600,
-                color: 'var(--graphite)',
-                cursor: 'default',
-                flexShrink: 0,
-                userSelect: 'none',
-              }}
-            >
+          <span className="relative inline-flex group">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-graphite text-[10px] font-semibold text-graphite cursor-default shrink-0 select-none">
               ?
             </span>
-            <span
-              style={{
-                display: 'none',
-                position: 'absolute',
-                left: 22,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                backgroundColor: '#1f2937',
-                color: '#f9fafb',
-                fontSize: 12,
-                lineHeight: 1.5,
-                padding: '6px 10px',
-                borderRadius: 6,
-                width: 260,
-                whiteSpace: 'normal',
-                zIndex: 100,
-                pointerEvents: 'none',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-              }}
-            >
+            <span className="hidden group-hover:block absolute left-[22px] top-1/2 -translate-y-1/2 bg-[#1f2937] text-[#f9fafb] text-xs leading-normal py-1.5 px-2.5 rounded-md w-[260px] whitespace-normal z-[100] pointer-events-none">
               Shown to interviewees before the interview starts. Briefly explain what to expect so they feel prepared and confident.
             </span>
           </span>
@@ -887,70 +773,21 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
           value={localDescription}
           onChange={(e) => setLocalDescription(e.target.value)}
           rows={4}
-          style={{ ...inputStyle, resize: 'vertical' }}
-          placeholder="Describe the purpose and scope of this interview template…"
+          className="input-field text-sm resize-y"
+          placeholder="Describe the purpose and scope of this interview template..."
         />
       </div>
 
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <label
-            style={{
-              fontWeight: 500,
-              fontSize: 14,
-              color: 'var(--graphite)',
-            }}
-          >
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-1.5">
+          <label className="font-medium text-sm text-graphite">
             System Prompt
           </label>
-          <span style={{ position: 'relative', display: 'inline-flex' }}>
-            <span
-              onMouseEnter={(e) => {
-                const tip = (e.currentTarget.nextSibling as HTMLElement);
-                if (tip) tip.style.display = 'block';
-              }}
-              onMouseLeave={(e) => {
-                const tip = (e.currentTarget.nextSibling as HTMLElement);
-                if (tip) tip.style.display = 'none';
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 16,
-                height: 16,
-                borderRadius: '50%',
-                border: '1px solid var(--graphite)',
-                fontSize: 10,
-                fontWeight: 600,
-                color: 'var(--graphite)',
-                cursor: 'default',
-                flexShrink: 0,
-                userSelect: 'none',
-              }}
-            >
+          <span className="relative inline-flex group">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-graphite text-[10px] font-semibold text-graphite cursor-default shrink-0 select-none">
               ?
             </span>
-            <span
-              style={{
-                display: 'none',
-                position: 'absolute',
-                left: 22,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                backgroundColor: '#1f2937',
-                color: '#f9fafb',
-                fontSize: 12,
-                lineHeight: 1.5,
-                padding: '6px 10px',
-                borderRadius: 6,
-                width: 260,
-                whiteSpace: 'normal',
-                zIndex: 100,
-                pointerEvents: 'none',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-              }}
-            >
+            <span className="hidden group-hover:block absolute left-[22px] top-1/2 -translate-y-1/2 bg-[#1f2937] text-[#f9fafb] text-xs leading-normal py-1.5 px-2.5 rounded-md w-[260px] whitespace-normal z-[100] pointer-events-none">
               This prompt defines the LLM&apos;s behavior for this template — setting its tone, rules, and interviewing style. It runs before every interview session.
             </span>
           </span>
@@ -959,36 +796,18 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
           value={localSystemPrompt}
           onChange={(e) => setLocalSystemPrompt(e.target.value)}
           rows={8}
-          style={{ ...inputStyle, resize: 'vertical' }}
-          placeholder="Instructions passed to the AI interviewer to guide voice, tone, and structure…"
+          className="input-field text-sm resize-y"
+          placeholder="Instructions passed to the AI interviewer to guide voice, tone, and structure..."
         />
       </div>
 
       {infoSaveError && (
-        <p
-          style={{
-            color: 'var(--horizon-red)',
-            fontSize: 14,
-            marginBottom: 12,
-            padding: '8px 12px',
-            backgroundColor: '#FEE2E2',
-            borderRadius: 6,
-          }}
-        >
+        <p className="alert-error text-sm mb-3">
           {infoSaveError}
         </p>
       )}
       {infoSaved && (
-        <p
-          style={{
-            color: '#15803D',
-            fontSize: 14,
-            marginBottom: 12,
-            padding: '8px 12px',
-            backgroundColor: '#DCFCE7',
-            borderRadius: 6,
-          }}
-        >
+        <p className="text-graphite text-sm mb-3 py-2 px-3 bg-ivory-tint rounded border border-ivory-tint">
           Template info saved.
         </p>
       )}
@@ -996,37 +815,21 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
       <button
         onClick={() => void handleSaveInfo()}
         disabled={updatingTemplate || !localName.trim()}
-        style={{
-          ...primaryBtn,
-          opacity: updatingTemplate || !localName.trim() ? 0.5 : 1,
-          cursor: updatingTemplate || !localName.trim() ? 'not-allowed' : 'pointer',
-        }}
+        className={cn(
+          'btn-primary',
+          (updatingTemplate || !localName.trim()) && 'opacity-50 cursor-not-allowed',
+        )}
       >
-        {updatingTemplate ? 'Saving…' : 'Save Info'}
+        {updatingTemplate ? 'Saving...' : 'Save Info'}
       </button>
     </div>
   );
 
   const renderStep2 = () => (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 24,
-        padding: '24px 0',
-      }}
-    >
+    <div className="grid grid-cols-2 gap-6 py-6">
       {/* Left: Question Bank */}
       <div>
-        <h3
-          style={{
-            fontFamily: 'var(--font-primary)',
-            fontWeight: 600,
-            fontSize: 16,
-            color: 'var(--graphite)',
-            marginBottom: 12,
-          }}
-        >
+        <h3 className="font-primary font-semibold text-base text-graphite mb-3">
           Question Bank
         </h3>
 
@@ -1034,106 +837,64 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
           type="search"
           value={bankSearch}
           onChange={(e) => handleBankSearchChange(e.target.value)}
-          placeholder="Search questions…"
-          style={{ ...inputStyle, marginBottom: 12 }}
+          placeholder="Search questions..."
+          className="input-field text-sm mb-3"
           aria-label="Search question bank"
         />
 
         {bankLoading && bankQuestions.length === 0 ? (
-          <p style={{ color: 'var(--grey)', fontSize: 14 }}>Loading…</p>
+          <p className="text-grey text-sm">Loading...</p>
         ) : bankQuestions.length === 0 ? (
-          <p style={{ color: 'var(--grey)', fontSize: 14 }}>
+          <p className="text-grey text-sm">
             No active questions found.
           </p>
         ) : (
           <>
-            <p style={{ color: 'var(--grey)', fontSize: 12, marginBottom: 8 }}>
+            <p className="text-grey text-xs mb-2">
               {bankTotalCount} question{bankTotalCount !== 1 ? 's' : ''}
               {bankDebouncedSearch ? ` matching "${bankDebouncedSearch}"` : ''}
               {addingQuestion && (
-                <span style={{ marginLeft: 8, fontStyle: 'italic' }}>Adding…</span>
+                <span className="ml-2 italic">Adding...</span>
               )}
             </p>
 
-            <div
-              style={{
-                border: '1px solid var(--ivory-tint)',
-                borderRadius: 8,
-                maxHeight: 440,
-                overflowY: 'auto',
-                backgroundColor: 'var(--white)',
-              }}
-            >
+            <div className="border border-ivory-tint rounded bg-white max-h-[440px] overflow-y-auto">
               {bankQuestions.map((q, i) => {
                 const isAdded = addedQuestionIds.has(q.id);
                 return (
                   <div
                     key={q.id}
                     onClick={() => !isAdded && void handleAddQuestion(q)}
-                    style={{
-                      padding: '12px 14px',
-                      borderBottom:
-                        i < bankQuestions.length - 1
-                          ? '1px solid var(--ivory-tint)'
-                          : 'none',
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 10,
-                      cursor: isAdded ? 'default' : 'pointer',
-                      backgroundColor: isAdded
-                        ? 'rgba(236,234,222,0.35)'
-                        : 'var(--white)',
-                    }}
+                    className={cn(
+                      'py-3 px-3.5 flex items-start gap-2.5 transition-colors duration-100',
+                      i < bankQuestions.length - 1 && 'border-b border-ivory-tint',
+                      isAdded
+                        ? 'cursor-default bg-ivory-tint/35'
+                        : cn(i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint', 'cursor-pointer hover:bg-horizon-red/[0.03]'),
+                    )}
                   >
                     <div
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: 4,
-                        border: isAdded ? 'none' : '1.5px solid var(--ivory-tint)',
-                        backgroundColor: isAdded ? '#DCFCE7' : 'var(--white)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 11,
-                        color: '#15803D',
-                        flexShrink: 0,
-                        marginTop: 2,
-                      }}
+                      className={cn(
+                        'w-[18px] h-[18px] rounded-[4px] flex items-center justify-center text-2xs shrink-0 mt-0.5',
+                        isAdded
+                          ? 'bg-graphite text-white'
+                          : 'border-[1.5px] border-ivory-tint bg-white',
+                      )}
                     >
-                      {isAdded ? '✓' : ''}
+                      {isAdded ? '\u2713' : ''}
                     </div>
                     <div>
-                      <p
-                        style={{
-                          fontSize: 13,
-                          color: 'var(--graphite)',
-                          lineHeight: 1.5,
-                          marginBottom: 4,
-                        }}
-                      >
-                        {q.text.length > 110 ? q.text.slice(0, 110) + '…' : q.text}
+                      <p className="text-[13px] text-graphite leading-normal mb-1">
+                        {q.text.length > 110 ? q.text.slice(0, 110) + '\u2026' : q.text}
                       </p>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: 'var(--grey)',
-                            fontStyle: 'italic',
-                          }}
-                        >
+                      <div className="flex gap-1.5 flex-wrap">
+                        <span className="text-2xs text-grey italic">
                           {q.category}
                         </span>
                         {q.tags.slice(0, 3).map((t) => (
                           <span
                             key={t.id}
-                            style={{
-                              fontSize: 10,
-                              padding: '1px 7px',
-                              borderRadius: 999,
-                              backgroundColor: 'var(--ivory-tint)',
-                              color: 'var(--grey)',
-                            }}
+                            className="badge bg-ivory-tint text-graphite"
                           >
                             {t.label}
                           </span>
@@ -1148,12 +909,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
             {bankPageInfo?.hasNextPage && (
               <button
                 onClick={() => setBankAfterCursor(bankPageInfo.endCursor)}
-                style={{
-                  ...secondaryBtn,
-                  marginTop: 10,
-                  fontSize: 13,
-                  padding: '8px 16px',
-                }}
+                className="btn-amber mt-2.5 text-[13px] py-2 px-4"
               >
                 Load more
               </button>
@@ -1164,59 +920,28 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
 
       {/* Right: Selected Questions with DnD */}
       <div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 12,
-          }}
-        >
-          <h3
-            style={{
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 16,
-              color: 'var(--graphite)',
-            }}
-          >
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-primary font-semibold text-base text-graphite">
             Selected Questions
           </h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="flex items-center gap-3">
             {isSavingOrder && (
-              <span style={{ color: 'var(--grey)', fontSize: 12 }}>
-                Saving order…
+              <span className="text-grey text-xs">
+                Saving order...
               </span>
             )}
-            <span style={{ color: 'var(--grey)', fontSize: 13 }}>
+            <span className="text-grey text-[13px]">
               {localQuestions.length} selected
             </span>
           </div>
         </div>
 
         {localQuestions.length === 0 ? (
-          <div
-            style={{
-              border: '2px dashed var(--ivory-tint)',
-              borderRadius: 8,
-              padding: '48px 24px',
-              textAlign: 'center',
-              color: 'var(--grey)',
-              fontSize: 14,
-            }}
-          >
+          <div className="border-2 border-dashed border-ivory-tint rounded py-12 px-6 text-center text-grey text-sm">
             Click questions in the bank to add them here.
           </div>
         ) : (
-          <div
-            style={{
-              border: '1px solid var(--ivory-tint)',
-              borderRadius: 8,
-              backgroundColor: 'var(--white)',
-              maxHeight: 500,
-              overflowY: 'auto',
-            }}
-          >
+          <div className="border border-ivory-tint rounded bg-white max-h-[500px] overflow-y-auto">
             {localQuestions.map((tq, idx) => (
               <div
                 key={tq.id}
@@ -1225,75 +950,32 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
                 onDragOver={(e) => handleDragOver(e, idx)}
                 onDrop={() => void handleDrop(idx)}
                 onDragEnd={handleDragEnd}
-                style={{
-                  padding: '10px 12px',
-                  borderBottom:
-                    idx < localQuestions.length - 1
-                      ? '1px solid var(--ivory-tint)'
-                      : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  cursor: 'grab',
-                  backgroundColor:
-                    dragOverIdx === idx
-                      ? 'rgba(122,14,19,0.04)'
-                      : 'var(--white)',
-                  borderLeft:
-                    dragOverIdx === idx
-                      ? '2px solid var(--horizon-red)'
-                      : '2px solid transparent',
-                }}
+                className={cn(
+                  'py-2.5 px-3 flex items-center gap-2.5 cursor-grab transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                  idx < localQuestions.length - 1 && 'border-b border-ivory-tint',
+                  dragOverIdx === idx
+                    ? 'bg-horizon-red/[0.04] border-l-2 border-l-horizon-red'
+                    : cn(idx % 2 === 0 ? 'bg-white' : 'bg-ivory-tint', 'border-l-2 border-l-transparent'),
+                )}
               >
-                <span
-                  style={{
-                    color: 'var(--grey)',
-                    fontSize: 14,
-                    flexShrink: 0,
-                    userSelect: 'none',
-                  }}
-                >
-                  ⠿
+                <span className="text-grey text-sm shrink-0 select-none">
+                  &#x2807;
                 </span>
-                <span
-                  style={{
-                    color: 'var(--grey)',
-                    fontSize: 11,
-                    minWidth: 20,
-                    flexShrink: 0,
-                    fontFamily: 'var(--font-mono)',
-                  }}
-                >
+                <span className="text-grey text-2xs min-w-[20px] shrink-0 font-mono">
                   {idx + 1}
                 </span>
-                <span
-                  style={{
-                    flex: 1,
-                    fontSize: 13,
-                    color: 'var(--graphite)',
-                    lineHeight: 1.4,
-                  }}
-                >
+                <span className="flex-1 text-[13px] text-graphite leading-[1.4]">
                   {tq.question.text.length > 80
-                    ? tq.question.text.slice(0, 80) + '…'
+                    ? tq.question.text.slice(0, 80) + '\u2026'
                     : tq.question.text}
                 </span>
                 <button
                   onClick={() => void handleRemoveQuestion(tq.id)}
                   aria-label="Remove question"
                   title="Remove from template"
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--grey)',
-                    cursor: 'pointer',
-                    fontSize: 16,
-                    padding: '0 4px',
-                    flexShrink: 0,
-                    lineHeight: 1,
-                  }}
+                  className="bg-none border-none text-grey cursor-pointer text-base py-0 px-1 shrink-0 leading-none hover:text-horizon-red"
                 >
-                  ×
+                  {'\u00d7'}
                 </button>
               </div>
             ))}
@@ -1303,112 +985,127 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     </div>
   );
 
-  const renderStep3 = () => (
-    <div style={{ padding: '24px 0' }}>
-      <p style={{ color: 'var(--grey)', fontSize: 14, marginBottom: 20 }}>
-        Assign each question to a category bucket within this template. Buckets may
-        differ from a question&apos;s master category. Changes save on field blur.
-      </p>
+  const renderStep3 = () => {
+    // Collect unique bucket names from all questions + edits
+    const uniqueBuckets = Array.from(
+      new Set(
+        localQuestions.map((tq) => bucketEdits[tq.id] ?? tq.categoryBucket).filter(Boolean)
+      )
+    ).sort();
 
-      {localQuestions.length === 0 ? (
-        <p style={{ color: 'var(--grey)', fontSize: 14 }}>
-          No questions selected. Go to Step 2 to add questions.
+    return (
+      <div className="py-6">
+        <p className="text-grey text-sm mb-5">
+          Assign each question to a category bucket within this template. Select
+          an existing bucket or create a new one. Changes save immediately.
         </p>
-      ) : (
-        <div
-          style={{
-            backgroundColor: 'var(--white)',
-            borderRadius: 12,
-            border: '1px solid var(--ivory-tint)',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '36px 1fr 210px',
-              padding: '10px 16px',
-              backgroundColor: 'var(--ivory)',
-              borderBottom: '1px solid var(--ivory-tint)',
-              gap: 12,
-            }}
-          >
-            {['#', 'Question', 'Category Bucket'].map((h) => (
-              <span key={h} style={colHeader}>
-                {h}
-              </span>
-            ))}
-          </div>
 
-          {localQuestions.map((tq, i) => (
-            <div
-              key={tq.id}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '36px 1fr 210px',
-                padding: '14px 16px',
-                borderBottom:
-                  i < localQuestions.length - 1
-                    ? '1px solid var(--ivory-tint)'
-                    : 'none',
-                alignItems: 'center',
-                gap: 12,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  color: 'var(--grey)',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                {i + 1}
-              </span>
-              <p
-                style={{ fontSize: 13, color: 'var(--graphite)', lineHeight: 1.4 }}
-              >
-                {tq.question.text.length > 120
-                  ? tq.question.text.slice(0, 120) + '…'
-                  : tq.question.text}
-              </p>
-              <input
-                type="text"
-                value={bucketEdits[tq.id] ?? tq.categoryBucket}
-                onChange={(e) => handleBucketChange(tq.id, e.target.value)}
-                onBlur={() => void handleBucketBlur(tq.id)}
-                placeholder="e.g. Behavioral"
-                style={{
-                  padding: '7px 10px',
-                  borderRadius: 6,
-                  border: '1px solid var(--ivory-tint)',
-                  backgroundColor: 'var(--ivory-tint)',
-                  fontFamily: 'var(--font-primary)',
-                  fontSize: 13,
-                  color: 'var(--graphite)',
-                  outline: 'none',
-                  width: '100%',
-                }}
-              />
+        {localQuestions.length === 0 ? (
+          <p className="text-grey text-sm">
+            No questions selected. Go to Step 2 to add questions.
+          </p>
+        ) : (
+          <div className="bg-white rounded border border-ivory-tint overflow-hidden">
+            <div className="grid grid-cols-[36px_1fr_210px] py-2.5 px-4 bg-graphite border-b border-graphite/20 gap-3">
+              {['#', 'Question', 'Category Bucket'].map((h) => (
+                <span key={h} className="col-header">
+                  {h}
+                </span>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+
+            {localQuestions.map((tq, i) => {
+              const currentBucket = bucketEdits[tq.id] ?? tq.categoryBucket;
+              const isCreating = creatingBucketFor === tq.id;
+
+              return (
+                <div
+                  key={tq.id}
+                  className={cn(
+                    'grid grid-cols-[36px_1fr_210px] py-3.5 px-4 items-center gap-3 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                    i < localQuestions.length - 1 && 'border-b border-ivory-tint',
+                    i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint',
+                  )}
+                >
+                  <span className="text-xs text-grey font-mono">
+                    {i + 1}
+                  </span>
+                  <p className="text-[13px] text-graphite leading-[1.4]">
+                    {tq.question.text.length > 120
+                      ? tq.question.text.slice(0, 120) + '\u2026'
+                      : tq.question.text}
+                  </p>
+
+                  {isCreating ? (
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={newBucketValue}
+                        onChange={(e) => setNewBucketValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void handleNewBucketSave(tq.id);
+                          if (e.key === 'Escape') setCreatingBucketFor(null);
+                        }}
+                        autoFocus
+                        placeholder="New bucket name"
+                        className="input-field text-[13px] py-1.5 flex-1 min-w-0"
+                      />
+                      <button
+                        onClick={() => void handleNewBucketSave(tq.id)}
+                        disabled={!newBucketValue.trim()}
+                        className={cn(
+                          'btn-primary py-1.5 px-2.5 text-2xs shrink-0',
+                          !newBucketValue.trim() && 'opacity-50 cursor-not-allowed',
+                        )}
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setCreatingBucketFor(null)}
+                        className="btn-ghost text-[13px] shrink-0"
+                      >
+                        {'\u00d7'}
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={currentBucket}
+                      onChange={(e) => void handleBucketSelect(tq.id, e.target.value)}
+                      className="select-field text-[13px]"
+                    >
+                      {uniqueBuckets.map((b) => (
+                        <option key={b} value={b}>
+                          {b}
+                        </option>
+                      ))}
+                      {!uniqueBuckets.includes(currentBucket) && (
+                        <option value={currentBucket}>{currentBucket}</option>
+                      )}
+                      <option value="__new__">+ Create new...</option>
+                    </select>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderStep4 = () => (
-    <div style={{ padding: '24px 0' }}>
-      <p style={{ color: 'var(--grey)', fontSize: 14, marginBottom: 20 }}>
+    <div className="py-6">
+      <p className="text-grey text-sm mb-5">
         Configure follow-up trigger conditions for each question. Click a question row
         to open the trigger editor.
       </p>
 
       {localQuestions.length === 0 ? (
-        <p style={{ color: 'var(--grey)', fontSize: 14 }}>
+        <p className="text-grey text-sm">
           No questions selected. Go to Step 2 to add questions.
         </p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="flex flex-col gap-2">
           {localQuestions.map((tq, idx) => {
             const isOpen = openTriggerFor === tq.id;
             const isSavingThis = savingTriggersFor === tq.id;
@@ -1424,71 +1121,47 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
             return (
               <div
                 key={tq.id}
-                style={{
-                  backgroundColor: 'var(--white)',
-                  borderRadius: 8,
-                  border: isOpen
-                    ? '1px solid var(--horizon-red)'
-                    : '1px solid var(--ivory-tint)',
-                  overflow: 'hidden',
-                }}
+                className={cn(
+                  'bg-white rounded border overflow-hidden',
+                  isOpen ? 'border-horizon-red' : 'border-ivory-tint',
+                )}
               >
                 <div
                   onClick={() => setOpenTriggerFor(isOpen ? null : tq.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '12px 16px',
-                    cursor: 'pointer',
-                    backgroundColor: isOpen
-                      ? 'rgba(122,14,19,0.03)'
-                      : 'var(--white)',
-                  }}
+                  className={cn(
+                    'flex items-center gap-3 py-3 px-4 cursor-pointer',
+                    isOpen ? 'bg-horizon-red/[0.03]' : 'bg-white hover:bg-ivory',
+                  )}
                 >
-                  <span
-                    style={{
-                      color: 'var(--grey)',
-                      fontSize: 11,
-                      fontFamily: 'var(--font-mono)',
-                      minWidth: 20,
-                      flexShrink: 0,
-                    }}
-                  >
+                  <span className="text-grey text-2xs font-mono min-w-[20px] shrink-0">
                     {idx + 1}
                   </span>
-                  <span
-                    style={{ flex: 1, fontSize: 13, color: 'var(--graphite)' }}
-                  >
+                  <span className="flex-1 text-[13px] text-graphite">
                     {tq.question.text.length > 120
-                      ? tq.question.text.slice(0, 120) + '…'
+                      ? tq.question.text.slice(0, 120) + '\u2026'
                       : tq.question.text}
                   </span>
                   <span
-                    style={{
-                      fontSize: 12,
-                      color:
-                        tq.followupTriggers.length > 0
-                          ? 'var(--horizon-red)'
-                          : 'var(--grey)',
-                      flexShrink: 0,
-                    }}
+                    className={cn(
+                      'text-xs shrink-0',
+                      tq.followupTriggers.length > 0 ? 'text-horizon-red' : 'text-grey',
+                    )}
                   >
                     {tq.followupTriggers.length} trigger
                     {tq.followupTriggers.length !== 1 ? 's' : ''}
                   </span>
                   <span
-                    style={{
-                      color: isOpen ? 'var(--horizon-red)' : 'var(--grey)',
-                      fontSize: 11,
-                    }}
+                    className={cn(
+                      'text-2xs',
+                      isOpen ? 'text-horizon-red' : 'text-grey',
+                    )}
                   >
-                    {isOpen ? '▲' : '▼'}
+                    {isOpen ? '\u25b2' : '\u25bc'}
                   </span>
                 </div>
 
                 {isOpen && (
-                  <div style={{ padding: '0 16px 16px' }}>
+                  <div className="px-4 pb-4">
                     <TriggerEditor
                       currentTriggers={tq.followupTriggers}
                       availableTargets={targets}
@@ -1521,68 +1194,36 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   );
 
   const renderStep5 = () => (
-    <div style={{ padding: '24px 0' }}>
+    <div className="py-6">
       {/* Summary badges */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-        <div
-          style={{
-            padding: '10px 16px',
-            borderRadius: 8,
-            backgroundColor: '#DCFCE7',
-            border: '1px solid #BBF7D0',
-          }}
-        >
-          <span style={{ fontWeight: 700, color: '#15803D', fontSize: 15 }}>
+      <div className="flex gap-3 mb-5">
+        <div className="py-2.5 px-4 rounded bg-ivory-tint border border-ivory-tint">
+          <span className="font-bold text-graphite text-[15px]">
             {requiredCount}
           </span>
-          <span style={{ color: '#15803D', fontSize: 13, marginLeft: 6 }}>
+          <span className="text-graphite text-[13px] ml-1.5">
             Required
           </span>
         </div>
-        <div
-          style={{
-            padding: '10px 16px',
-            borderRadius: 8,
-            backgroundColor: 'var(--ivory)',
-            border: '1px solid var(--ivory-tint)',
-          }}
-        >
-          <span
-            style={{ fontWeight: 700, color: 'var(--graphite)', fontSize: 15 }}
-          >
+        <div className="py-2.5 px-4 rounded bg-ivory border border-ivory-tint">
+          <span className="font-bold text-graphite text-[15px]">
             {optionalCount}
           </span>
-          <span style={{ color: 'var(--grey)', fontSize: 13, marginLeft: 6 }}>
+          <span className="text-grey text-[13px] ml-1.5">
             Optional
           </span>
         </div>
       </div>
 
       {localQuestions.length === 0 ? (
-        <p style={{ color: 'var(--grey)', fontSize: 14 }}>
+        <p className="text-grey text-sm">
           No questions selected. Go to Step 2 to add questions.
         </p>
       ) : (
-        <div
-          style={{
-            backgroundColor: 'var(--white)',
-            borderRadius: 12,
-            border: '1px solid var(--ivory-tint)',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '36px 1fr 150px',
-              padding: '10px 16px',
-              backgroundColor: 'var(--ivory)',
-              borderBottom: '1px solid var(--ivory-tint)',
-              gap: 12,
-            }}
-          >
+        <div className="bg-white rounded border border-ivory-tint overflow-hidden">
+          <div className="grid grid-cols-[36px_1fr_150px] py-2.5 px-4 bg-graphite border-b border-graphite/20 gap-3">
             {['#', 'Question', 'Required?'].map((h) => (
-              <span key={h} style={colHeader}>
+              <span key={h} className="col-header">
                 {h}
               </span>
             ))}
@@ -1593,50 +1234,30 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
             return (
               <div
                 key={tq.id}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '36px 1fr 150px',
-                  padding: '14px 16px',
-                  borderBottom:
-                    i < localQuestions.length - 1
-                      ? '1px solid var(--ivory-tint)'
-                      : 'none',
-                  alignItems: 'center',
-                  gap: 12,
-                }}
+                className={cn(
+                  'grid grid-cols-[36px_1fr_150px] py-3.5 px-4 items-center gap-3 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                  i < localQuestions.length - 1 && 'border-b border-ivory-tint',
+                  i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint',
+                )}
               >
-                <span
-                  style={{
-                    fontSize: 12,
-                    color: 'var(--grey)',
-                    fontFamily: 'var(--font-mono)',
-                  }}
-                >
+                <span className="text-xs text-grey font-mono">
                   {i + 1}
                 </span>
-                <p
-                  style={{ fontSize: 13, color: 'var(--graphite)', lineHeight: 1.4 }}
-                >
+                <p className="text-[13px] text-graphite leading-[1.4]">
                   {tq.question.text.length > 140
-                    ? tq.question.text.slice(0, 140) + '…'
+                    ? tq.question.text.slice(0, 140) + '\u2026'
                     : tq.question.text}
                 </p>
                 <button
                   onClick={() => void handleToggleRequired(tq.id, tq.isRequired)}
                   disabled={isToggling}
-                  style={{
-                    padding: '5px 14px',
-                    borderRadius: 999,
-                    border: 'none',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: isToggling ? 'not-allowed' : 'pointer',
-                    backgroundColor: tq.isRequired ? '#DCFCE7' : 'var(--ivory-tint)',
-                    color: tq.isRequired ? '#15803D' : 'var(--grey)',
-                    fontFamily: 'var(--font-primary)',
-                    opacity: isToggling ? 0.6 : 1,
-                    transition: 'all 0.15s',
-                  }}
+                  className={cn(
+                    'py-[5px] px-3.5 rounded-md border-none text-xs font-semibold font-primary transition-all duration-150',
+                    tq.isRequired
+                      ? 'bg-horizon-red/10 text-horizon-red'
+                      : 'bg-ivory-tint text-grey',
+                    isToggling ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
+                  )}
                 >
                   {tq.isRequired ? 'Required' : 'Optional'}
                 </button>
@@ -1661,18 +1282,18 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     }
 
     return (
-      <div style={{ padding: '24px 0' }}>
-        <p style={{ color: 'var(--grey)', fontSize: 14, marginBottom: 20 }}>
+      <div className="py-6">
+        <p className="text-grey text-sm mb-5">
           Review the full interview flow before publishing. Click a bucket header to
           collapse or expand it.
         </p>
 
         {localQuestions.length === 0 ? (
-          <p style={{ color: 'var(--grey)', fontSize: 14 }}>
+          <p className="text-grey text-sm">
             No questions in this template yet.
           </p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="flex flex-col gap-3">
             {bucketOrder.map((bucket) => {
               const qs = buckets[bucket];
               const isCollapsed = collapsedBuckets.has(bucket);
@@ -1680,12 +1301,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
               return (
                 <div
                   key={bucket}
-                  style={{
-                    backgroundColor: 'var(--white)',
-                    borderRadius: 10,
-                    border: '1px solid var(--ivory-tint)',
-                    overflow: 'hidden',
-                  }}
+                  className="bg-white rounded-[10px] border border-ivory-tint overflow-hidden"
                 >
                   {/* Bucket header */}
                   <button
@@ -1696,33 +1312,17 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
                         return next;
                       });
                     }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      width: '100%',
-                      padding: '14px 18px',
-                      border: 'none',
-                      backgroundColor: 'var(--ivory)',
-                      cursor: 'pointer',
-                      fontFamily: 'var(--font-primary)',
-                    }}
+                    className="flex items-center justify-between w-full py-3.5 px-[18px] border-none bg-ivory cursor-pointer font-primary"
                   >
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        fontSize: 15,
-                        color: 'var(--graphite)',
-                      }}
-                    >
+                    <span className="font-semibold text-[15px] text-graphite">
                       {bucket}
                     </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <span style={{ fontSize: 12, color: 'var(--grey)' }}>
+                    <span className="flex items-center gap-3">
+                      <span className="text-xs text-grey">
                         {qs.length} question{qs.length !== 1 ? 's' : ''}
                       </span>
-                      <span style={{ color: 'var(--grey)', fontSize: 11 }}>
-                        {isCollapsed ? '▶' : '▼'}
+                      <span className="text-grey text-2xs">
+                        {isCollapsed ? '\u25b6' : '\u25bc'}
                       </span>
                     </span>
                   </button>
@@ -1734,51 +1334,28 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
                       return (
                         <div
                           key={tq.id}
-                          style={{ padding: '14px 18px', borderTop: '1px solid var(--ivory-tint)' }}
+                          className="py-3.5 px-[18px] border-t border-ivory-tint"
                         >
                           <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'flex-start',
-                              gap: 10,
-                              marginBottom:
-                                tq.followupTriggers.length > 0 ? 10 : 0,
-                            }}
+                            className={cn(
+                              'flex items-start gap-2.5',
+                              tq.followupTriggers.length > 0 && 'mb-2.5',
+                            )}
                           >
-                            <span
-                              style={{
-                                fontSize: 11,
-                                color: 'var(--grey)',
-                                fontFamily: 'var(--font-mono)',
-                                minWidth: 24,
-                                marginTop: 3,
-                                flexShrink: 0,
-                              }}
-                            >
+                            <span className="text-2xs text-grey font-mono min-w-[24px] mt-[3px] shrink-0">
                               #{seqNum}
                             </span>
-                            <div style={{ flex: 1 }}>
-                              <p
-                                style={{
-                                  fontSize: 14,
-                                  color: 'var(--graphite)',
-                                  lineHeight: 1.5,
-                                  marginBottom: 6,
-                                }}
-                              >
+                            <div className="flex-1">
+                              <p className="text-sm text-graphite leading-normal mb-1.5">
                                 {tq.question.text}
                               </p>
                               <span
-                                style={{
-                                  fontSize: 11,
-                                  padding: '2px 9px',
-                                  borderRadius: 999,
-                                  backgroundColor: tq.isRequired
-                                    ? '#DCFCE7'
-                                    : 'var(--ivory-tint)',
-                                  color: tq.isRequired ? '#15803D' : 'var(--grey)',
-                                  fontWeight: 600,
-                                }}
+                                className={cn(
+                                  'text-2xs py-0.5 px-2 rounded-pill font-semibold',
+                                  tq.isRequired
+                                    ? 'bg-horizon-red/10 text-horizon-red'
+                                    : 'bg-ivory-tint text-grey',
+                                )}
                               >
                                 {tq.isRequired ? 'Required' : 'Optional'}
                               </span>
@@ -1786,14 +1363,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
                           </div>
 
                           {tq.followupTriggers.length > 0 && (
-                            <div
-                              style={{
-                                marginLeft: 34,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 5,
-                              }}
-                            >
+                            <div className="ml-[34px] flex flex-col gap-[5px]">
                               {tq.followupTriggers.map((trigger, ti) => {
                                 const targetTexts = trigger.targetTemplateQuestionIds
                                   .map((id) => {
@@ -1803,7 +1373,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
                                     if (!found) return null;
                                     const txt = found.question.text;
                                     return txt.length > 50
-                                      ? txt.slice(0, 50) + '…'
+                                      ? txt.slice(0, 50) + '\u2026'
                                       : txt;
                                   })
                                   .filter((s): s is string => s !== null);
@@ -1811,42 +1381,23 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
                                 return (
                                   <div
                                     key={ti}
-                                    style={{
-                                      fontSize: 12,
-                                      color: 'var(--grey)',
-                                      padding: '6px 10px',
-                                      borderRadius: 6,
-                                      backgroundColor: 'var(--ivory)',
-                                      border: '1px solid var(--ivory-tint)',
-                                    }}
+                                    className="text-xs text-grey py-1.5 px-2.5 rounded-md bg-ivory border border-ivory-tint"
                                   >
-                                    <strong
-                                      style={{
-                                        textTransform: 'capitalize',
-                                        color: 'var(--graphite)',
-                                      }}
-                                    >
+                                    <strong className="capitalize text-graphite">
                                       {trigger.type}
                                     </strong>
                                     {trigger.type === 'keyword' &&
                                       trigger.keywords &&
-                                      ` — "${trigger.keywords}"`}
+                                      ` \u2014 "${trigger.keywords}"`}
                                     {trigger.type === 'sentiment' &&
                                       trigger.sentiment &&
-                                      ` — ${trigger.sentiment}`}
+                                      ` \u2014 ${trigger.sentiment}`}
                                     {trigger.type === 'length' &&
                                       trigger.lengthDescription &&
-                                      ` — ${trigger.lengthDescription}`}
+                                      ` \u2014 ${trigger.lengthDescription}`}
                                     {targetTexts.length > 0 && (
-                                      <span
-                                        style={{
-                                          display: 'block',
-                                          marginTop: 3,
-                                          color: 'var(--grey)',
-                                          fontSize: 11,
-                                        }}
-                                      >
-                                        → {targetTexts.join(', ')}
+                                      <span className="block mt-[3px] text-grey text-2xs">
+                                        {'\u2192'} {targetTexts.join(', ')}
                                       </span>
                                     )}
                                   </div>
@@ -1873,105 +1424,52 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     const isArchived = status === 'archived';
 
     return (
-      <div style={{ maxWidth: 560, padding: '32px 0' }}>
+      <div className="max-w-[560px] py-8">
         {/* Status */}
-        <div style={{ marginBottom: 24 }}>
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: 'var(--grey)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.07em',
-              marginRight: 10,
-            }}
-          >
+        <div className="mb-6">
+          <span className="text-xs font-semibold text-grey uppercase tracking-label mr-2.5">
             Current status:
           </span>
-          <span
-            style={{
-              padding: '4px 12px',
-              borderRadius: 999,
-              fontSize: 13,
-              fontWeight: 600,
-              backgroundColor: isPublished
-                ? '#DCFCE7'
-                : isArchived
-                ? '#F3F4F6'
-                : '#FEF3C7',
-              color: isPublished
-                ? '#15803D'
-                : isArchived
-                ? '#6B7280'
-                : '#92400E',
-            }}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-          </span>
+          <StatusBadge status={status} />
         </div>
 
         {/* Summary card */}
-        <div
-          style={{
-            backgroundColor: 'var(--white)',
-            borderRadius: 10,
-            border: '1px solid var(--ivory-tint)',
-            padding: '20px 24px',
-            marginBottom: 24,
-          }}
-        >
+        <div className="bg-white rounded-[10px] border border-ivory-tint py-5 px-6 mb-6">
           <p
-            style={{
-              fontWeight: 600,
-              fontSize: 15,
-              color: 'var(--graphite)',
-              marginBottom: template?.description ? 6 : 14,
-            }}
+            className={cn(
+              'font-semibold text-[15px] text-graphite',
+              template?.description ? 'mb-1.5' : 'mb-3.5',
+            )}
           >
             {template?.name}
           </p>
           {template?.description && (
-            <p
-              style={{
-                fontSize: 13,
-                color: 'var(--grey)',
-                marginBottom: 14,
-                lineHeight: 1.5,
-              }}
-            >
+            <p className="text-[13px] text-grey mb-3.5 leading-normal">
               {template.description}
             </p>
           )}
-          <div style={{ display: 'flex', gap: 24 }}>
+          <div className="flex gap-6">
             <div>
-              <span
-                style={{
-                  fontSize: 22,
-                  fontWeight: 700,
-                  color: 'var(--graphite)',
-                }}
-              >
+              <span className="text-[22px] font-bold text-graphite">
                 {localQuestions.length}
               </span>
-              <span style={{ fontSize: 13, color: 'var(--grey)', marginLeft: 6 }}>
+              <span className="text-[13px] text-grey ml-1.5">
                 questions
               </span>
             </div>
             <div>
-              <span style={{ fontSize: 22, fontWeight: 700, color: '#15803D' }}>
+              <span className="text-[22px] font-bold text-graphite">
                 {requiredCount}
               </span>
-              <span style={{ fontSize: 13, color: 'var(--grey)', marginLeft: 6 }}>
+              <span className="text-[13px] text-grey ml-1.5">
                 required
               </span>
             </div>
             <div>
-              <span
-                style={{ fontSize: 22, fontWeight: 700, color: 'var(--grey)' }}
-              >
+              <span className="text-[22px] font-bold text-grey">
                 {optionalCount}
               </span>
-              <span style={{ fontSize: 13, color: 'var(--grey)', marginLeft: 6 }}>
+              <span className="text-[13px] text-grey ml-1.5">
                 optional
               </span>
             </div>
@@ -1979,17 +1477,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
         </div>
 
         {publishError && (
-          <div
-            style={{
-              backgroundColor: '#FEE2E2',
-              border: '1px solid #FCA5A5',
-              borderRadius: 8,
-              padding: '12px 16px',
-              marginBottom: 16,
-              color: '#B91C1C',
-              fontSize: 14,
-            }}
-          >
+          <div className="alert-error mb-4">
             {publishError}
           </div>
         )}
@@ -1997,17 +1485,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
         {isDraft && (
           <div>
             {localQuestions.length === 0 && (
-              <div
-                style={{
-                  backgroundColor: '#FEF3C7',
-                  border: '1px solid #FDE68A',
-                  borderRadius: 8,
-                  padding: '10px 14px',
-                  color: '#92400E',
-                  fontSize: 13,
-                  marginBottom: 16,
-                }}
-              >
+              <div className="alert-warning py-2.5 px-3.5 text-[13px] mb-4">
                 <strong>Warning:</strong> This template has no questions. Add at
                 least one question in Step 2 before publishing.
               </div>
@@ -2015,31 +1493,19 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
             <button
               onClick={() => void handlePublish()}
               disabled={isPublishing || localQuestions.length === 0}
-              style={{
-                ...primaryBtn,
-                opacity:
-                  isPublishing || localQuestions.length === 0 ? 0.5 : 1,
-                cursor:
-                  isPublishing || localQuestions.length === 0
-                    ? 'not-allowed'
-                    : 'pointer',
-              }}
+              className={cn(
+                'btn-primary',
+                (isPublishing || localQuestions.length === 0) && 'opacity-50 cursor-not-allowed',
+              )}
             >
-              {isPublishing ? 'Publishing…' : 'Publish Template'}
+              {isPublishing ? 'Publishing...' : 'Publish Template'}
             </button>
           </div>
         )}
 
         {isPublished && (
           <div>
-            <p
-              style={{
-                color: 'var(--grey)',
-                fontSize: 13,
-                marginBottom: 16,
-                lineHeight: 1.6,
-              }}
-            >
+            <p className="text-grey text-[13px] mb-4 leading-relaxed">
               This template is live and can be assigned to users. You can
               continue editing at any time — changes take effect for new
               interviews.
@@ -2047,42 +1513,31 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
             <button
               onClick={() => void handleArchive()}
               disabled={isPublishing}
-              style={{
-                ...secondaryBtn,
-                border: '1px solid #FCA5A5',
-                color: '#B91C1C',
-                opacity: isPublishing ? 0.5 : 1,
-                cursor: isPublishing ? 'not-allowed' : 'pointer',
-              }}
+              className={cn(
+                'btn-wine',
+                isPublishing && 'opacity-50 cursor-not-allowed',
+              )}
             >
-              {isPublishing ? 'Archiving…' : 'Archive Template'}
+              {isPublishing ? 'Archiving...' : 'Archive Template'}
             </button>
           </div>
         )}
 
         {isArchived && (
           <div>
-            <p
-              style={{
-                color: 'var(--grey)',
-                fontSize: 13,
-                marginBottom: 16,
-                lineHeight: 1.6,
-              }}
-            >
+            <p className="text-grey text-[13px] mb-4 leading-relaxed">
               This template is archived and cannot be assigned to new users.
               Re-publish to make it available again.
             </p>
             <button
               onClick={() => void handlePublish()}
               disabled={isPublishing}
-              style={{
-                ...primaryBtn,
-                opacity: isPublishing ? 0.5 : 1,
-                cursor: isPublishing ? 'not-allowed' : 'pointer',
-              }}
+              className={cn(
+                'btn-primary',
+                isPublishing && 'opacity-50 cursor-not-allowed',
+              )}
             >
-              {isPublishing ? 'Publishing…' : 'Re-publish Template'}
+              {isPublishing ? 'Publishing...' : 'Re-publish Template'}
             </button>
           </div>
         )}
@@ -2096,34 +1551,16 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
 
   if (templateLoading && !templateData) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'var(--ivory)',
-          fontFamily: 'var(--font-primary)',
-        }}
-      >
-        <p style={{ color: 'var(--grey)', fontSize: 15 }}>Loading template…</p>
+      <div className="min-h-screen flex items-center justify-center bg-ivory font-primary">
+        <p className="text-grey text-[15px]">Loading template...</p>
       </div>
     );
   }
 
   if (templateError || !template) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'var(--ivory)',
-          fontFamily: 'var(--font-primary)',
-        }}
-      >
-        <p style={{ color: 'var(--horizon-red)', fontSize: 15 }}>
+      <div className="min-h-screen flex items-center justify-center bg-ivory font-primary">
+        <p className="text-horizon-red text-[15px]">
           {templateError
             ? `Error loading template: ${templateError.message}`
             : 'Template not found.'}
@@ -2154,104 +1591,40 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   // ---------------------------------------------------------------------------
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        backgroundColor: 'var(--ivory)',
-        fontFamily: 'var(--font-primary)',
-      }}
-    >
+    <div className="min-h-screen bg-ivory font-primary">
       {/* Page header */}
-      <header
-        style={{
-          padding: '20px 32px',
-          borderBottom: '1px solid var(--ivory-tint)',
-          backgroundColor: 'var(--white)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}
-      >
+      <header className="py-5 px-8 border-b border-ivory-tint bg-white flex items-center justify-between gap-4">
         <div>
-          <h2
-            style={{
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 22,
-              color: 'var(--graphite)',
-              marginBottom: 2,
-            }}
-          >
+          <h2 className="font-primary font-semibold text-[22px] text-graphite mb-0.5">
             {template.name}
           </h2>
-          <p style={{ color: 'var(--grey)', fontSize: 14 }}>
+          <p className="text-grey text-sm">
             Template Builder —{' '}
             {localQuestions.length} question
             {localQuestions.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <span
-          style={{
-            padding: '5px 14px',
-            borderRadius: 999,
-            fontSize: 13,
-            fontWeight: 600,
-            backgroundColor:
-              template.status === 'published'
-                ? '#DCFCE7'
-                : template.status === 'archived'
-                ? '#F3F4F6'
-                : '#FEF3C7',
-            color:
-              template.status === 'published'
-                ? '#15803D'
-                : template.status === 'archived'
-                ? '#6B7280'
-                : '#92400E',
-          }}
-        >
-          {template.status.charAt(0).toUpperCase() + template.status.slice(1)}
-        </span>
+        <StatusBadge status={template.status} />
       </header>
 
       {/* Step indicator */}
       <StepIndicator current={currentStep} onSelect={setCurrentStep} />
 
       {/* Content */}
-      <div style={{ padding: '0 32px' }}>
+      <div className="px-8">
         {/* Page-level error */}
         {pageError && (
           <div
             role="alert"
-            style={{
-              backgroundColor: '#FEE2E2',
-              border: '1px solid #FCA5A5',
-              borderRadius: 8,
-              padding: '12px 16px',
-              marginTop: 20,
-              color: '#B91C1C',
-              fontSize: 14,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
+            className="alert-error mt-5 flex justify-between items-center"
           >
             <span>{pageError}</span>
             <button
               onClick={() => setPageError(null)}
               aria-label="Dismiss error"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#B91C1C',
-                cursor: 'pointer',
-                fontSize: 16,
-                lineHeight: 1,
-                padding: '0 4px',
-              }}
+              className="bg-none border-none text-horizon-red cursor-pointer text-base leading-none py-0 px-1"
             >
-              ×
+              {'\u00d7'}
             </button>
           </div>
         )}
@@ -2260,35 +1633,26 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
         {renderCurrentStep()}
 
         {/* Step navigation */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            padding: '20px 0 32px',
-            borderTop: '1px solid var(--ivory-tint)',
-          }}
-        >
+        <div className="flex justify-between py-5 pb-8 border-t border-ivory-tint">
           <button
             onClick={() => setCurrentStep((s) => Math.max(1, s - 1))}
             disabled={currentStep === 1}
-            style={{
-              ...secondaryBtn,
-              opacity: currentStep === 1 ? 0.4 : 1,
-              cursor: currentStep === 1 ? 'not-allowed' : 'pointer',
-            }}
+            className={cn(
+              'btn-primary',
+              currentStep === 1 && 'opacity-40 cursor-not-allowed',
+            )}
           >
-            ← Back
+            {'\u2190'} Back
           </button>
           <button
             onClick={() => setCurrentStep((s) => Math.min(7, s + 1))}
             disabled={currentStep === 7}
-            style={{
-              ...primaryBtn,
-              opacity: currentStep === 7 ? 0.4 : 1,
-              cursor: currentStep === 7 ? 'not-allowed' : 'pointer',
-            }}
+            className={cn(
+              'btn-primary',
+              currentStep === 7 && 'opacity-40 cursor-not-allowed',
+            )}
           >
-            Next →
+            Next {'\u2192'}
           </button>
         </div>
       </div>

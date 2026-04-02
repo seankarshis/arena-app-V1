@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, gql } from '@apollo/client';
 import { useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,46 +46,6 @@ const CREATE_TEMPLATE = gql`
 `;
 
 // ---------------------------------------------------------------------------
-// Shared styles
-// ---------------------------------------------------------------------------
-
-const primaryBtn: React.CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: 999,
-  border: 'none',
-  backgroundColor: 'var(--horizon-red)',
-  color: 'var(--white)',
-  fontFamily: 'var(--font-primary)',
-  fontWeight: 600,
-  fontSize: 14,
-  cursor: 'pointer',
-};
-
-const secondaryBtn: React.CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: 999,
-  border: '1px solid var(--ivory-tint)',
-  backgroundColor: 'var(--white)',
-  color: 'var(--graphite)',
-  fontFamily: 'var(--font-primary)',
-  fontWeight: 500,
-  fontSize: 14,
-  cursor: 'pointer',
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: '1px solid var(--grey)',
-  backgroundColor: 'var(--ivory-tint)',
-  fontFamily: 'var(--font-primary)',
-  fontSize: 14,
-  color: 'var(--graphite)',
-  outline: 'none',
-  width: '100%',
-};
-
-// ---------------------------------------------------------------------------
 // CreateTemplateModal
 // ---------------------------------------------------------------------------
 
@@ -104,50 +66,15 @@ function CreateTemplateModal({ onSave, onClose, isSaving, error }: CreateModalPr
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(26,26,26,0.5)',
-      }}
-    >
-      <div
-        style={{
-          backgroundColor: 'var(--white)',
-          borderRadius: 12,
-          padding: 32,
-          width: '100%',
-          maxWidth: 520,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-        }}
-      >
-        <h2
-          style={{
-            fontFamily: 'var(--font-primary)',
-            fontWeight: 600,
-            fontSize: 20,
-            color: 'var(--graphite)',
-            marginBottom: 24,
-          }}
-        >
+    <div className="modal-backdrop">
+      <div className="modal-panel max-w-[520px]">
+        <h2 className="font-semibold text-xl text-graphite mb-6">
           Create Template
         </h2>
 
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 18 }}>
-            <label
-              style={{
-                display: 'block',
-                fontWeight: 500,
-                fontSize: 14,
-                color: 'var(--graphite)',
-                marginBottom: 6,
-              }}
-            >
+          <div className="mb-4">
+            <label className="block font-medium text-sm text-graphite mb-1.5">
               Template Name *
             </label>
             <input
@@ -156,64 +83,41 @@ function CreateTemplateModal({ onSave, onClose, isSaving, error }: CreateModalPr
               onChange={(e) => setName(e.target.value)}
               required
               autoFocus
-              style={inputStyle}
+              className="input-field text-sm"
               placeholder="e.g. Senior Engineer Interview — Q2 2026"
             />
           </div>
 
-          <div style={{ marginBottom: 24 }}>
-            <label
-              style={{
-                display: 'block',
-                fontWeight: 500,
-                fontSize: 14,
-                color: 'var(--graphite)',
-                marginBottom: 6,
-              }}
-            >
+          <div className="mb-6">
+            <label className="block font-medium text-sm text-graphite mb-1.5">
               Description
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              style={{ ...inputStyle, resize: 'vertical' }}
+              className="input-field text-sm resize-y"
               placeholder="Optional: describe the purpose of this template…"
             />
           </div>
 
           {error && (
-            <p
-              style={{
-                color: 'var(--horizon-red)',
-                fontSize: 14,
-                marginBottom: 16,
-                padding: '8px 12px',
-                backgroundColor: '#FEE2E2',
-                borderRadius: 6,
-              }}
-            >
-              {error}
-            </p>
+            <div className="alert-error mb-4">{error}</div>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
               disabled={isSaving}
-              style={{ ...secondaryBtn, opacity: isSaving ? 0.6 : 1 }}
+              className={cn('btn-secondary', isSaving && 'opacity-60')}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSaving || !name.trim()}
-              style={{
-                ...primaryBtn,
-                opacity: isSaving || !name.trim() ? 0.5 : 1,
-                cursor: isSaving || !name.trim() ? 'not-allowed' : 'pointer',
-              }}
+              className="btn-primary"
             >
               {isSaving ? 'Creating…' : 'Create & Edit'}
             </button>
@@ -221,32 +125,6 @@ function CreateTemplateModal({ onSave, onClose, isSaving, error }: CreateModalPr
         </form>
       </div>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Status badge helper
-// ---------------------------------------------------------------------------
-
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, React.CSSProperties> = {
-    published: { backgroundColor: '#DCFCE7', color: '#15803D' },
-    archived: { backgroundColor: '#F3F4F6', color: '#6B7280' },
-    draft: { backgroundColor: '#FEF3C7', color: '#92400E' },
-  };
-  const s = styles[status] ?? styles.draft;
-  return (
-    <span
-      style={{
-        padding: '3px 10px',
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 600,
-        ...s,
-      }}
-    >
-      {status.charAt(0).toUpperCase() + status.slice(1)}
-    </span>
   );
 }
 
@@ -285,30 +163,12 @@ export default function TemplatesPage() {
   return (
     <>
       {/* Header */}
-      <header
-        style={{
-          padding: '20px 32px',
-          borderBottom: '1px solid var(--ivory-tint)',
-          backgroundColor: 'var(--white)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}
-      >
+      <header className="page-header flex items-center justify-between gap-4">
         <div>
-          <h2
-            style={{
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 22,
-              color: 'var(--graphite)',
-              marginBottom: 2,
-            }}
-          >
+          <h2 className="font-semibold text-[22px] text-graphite mb-0.5">
             Interview Templates
           </h2>
-          <p style={{ color: 'var(--grey)', fontSize: 14 }}>
+          <p className="text-grey text-sm">
             Create and manage interview templates. Only published templates can be
             assigned to users.
           </p>
@@ -318,126 +178,52 @@ export default function TemplatesPage() {
             setCreateError(null);
             setShowCreateModal(true);
           }}
-          style={primaryBtn}
+          className="btn-primary"
         >
           + New Template
         </button>
       </header>
 
       {/* Content */}
-      <div style={{ padding: '24px 32px' }}>
+      <div className="page-content">
         {error && (
-          <div
-            role="alert"
-            style={{
-              backgroundColor: '#FEE2E2',
-              border: '1px solid #FCA5A5',
-              borderRadius: 8,
-              padding: '12px 16px',
-              marginBottom: 16,
-              color: '#B91C1C',
-              fontSize: 14,
-            }}
-          >
+          <div role="alert" className="alert-error mb-4">
             Failed to load templates: {error.message}
           </div>
         )}
 
         {loading && templates.length === 0 ? (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '64px 0',
-              color: 'var(--grey)',
-              fontSize: 15,
-            }}
-          >
+          <div className="text-center py-16 text-grey text-[15px]">
             Loading templates…
           </div>
         ) : templates.length === 0 ? (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '64px 0',
-              color: 'var(--grey)',
-              fontSize: 15,
-            }}
-          >
+          <div className="text-center py-16 text-grey text-[15px]">
             No templates yet. Create one to get started.
           </div>
         ) : (
-          <div
-            style={{
-              backgroundColor: 'var(--white)',
-              borderRadius: 12,
-              border: '1px solid var(--ivory-tint)',
-              overflow: 'hidden',
-            }}
-          >
+          <div className="bg-white rounded border border-ivory-tint overflow-hidden">
             {/* Table header */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 120px 100px 80px',
-                padding: '11px 18px',
-                borderBottom: '1px solid var(--ivory-tint)',
-                backgroundColor: 'var(--ivory)',
-                gap: 12,
-              }}
-            >
+            <div className="grid grid-cols-[1fr_120px_100px_80px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
               {['Template', 'Status', 'Questions', 'Action'].map((h) => (
-                <span
-                  key={h}
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: 'var(--grey)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.07em',
-                  }}
-                >
-                  {h}
-                </span>
+                <span key={h} className="col-header">{h}</span>
               ))}
             </div>
 
             {templates.map((tpl, i) => (
               <div
                 key={tpl.id}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 120px 100px 80px',
-                  padding: '16px 18px',
-                  borderBottom:
-                    i < templates.length - 1
-                      ? '1px solid var(--ivory-tint)'
-                      : 'none',
-                  alignItems: 'center',
-                  gap: 12,
-                }}
+                className={cn(
+                  'grid grid-cols-[1fr_120px_100px_80px] py-4 px-[18px] items-center gap-3 border-b border-ivory-tint last:border-b-0 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                  i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint'
+                )}
               >
                 {/* Name + description */}
                 <div>
-                  <p
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 500,
-                      color: 'var(--graphite)',
-                      marginBottom: tpl.description ? 3 : 0,
-                    }}
-                  >
+                  <p className={cn('text-sm font-medium text-graphite', tpl.description && 'mb-0.5')}>
                     {tpl.name}
                   </p>
                   {tpl.description && (
-                    <p
-                      style={{
-                        fontSize: 12,
-                        color: 'var(--grey)',
-                        lineHeight: 1.4,
-                        overflow: 'hidden',
-                        maxHeight: '2.8em',
-                      }}
-                    >
+                    <p className="text-xs text-grey leading-snug overflow-hidden max-h-[2.8em]">
                       {tpl.description}
                     </p>
                   )}
@@ -445,28 +231,13 @@ export default function TemplatesPage() {
 
                 <StatusBadge status={tpl.status} />
 
-                <span
-                  style={{
-                    fontSize: 14,
-                    color: 'var(--graphite)',
-                    fontFamily: 'var(--font-mono)',
-                  }}
-                >
+                <span className="text-sm text-graphite font-mono">
                   {tpl.questions.length}
                 </span>
 
                 <button
                   onClick={() => router.push(`/admin/templates/${tpl.id}`)}
-                  style={{
-                    background: 'none',
-                    border: '1px solid var(--ivory-tint)',
-                    borderRadius: 6,
-                    padding: '5px 12px',
-                    fontSize: 13,
-                    color: 'var(--graphite)',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font-primary)',
-                  }}
+                  className="btn-secondary py-1 px-3 text-[13px]"
                 >
                   Edit
                 </button>

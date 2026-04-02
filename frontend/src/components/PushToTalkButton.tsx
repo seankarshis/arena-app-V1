@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
+import { cn } from '@/lib/utils';
 import type {
   InterviewState,
   InterviewSession,
@@ -37,12 +38,8 @@ const PTT_VISIBLE_STATES: ReadonlySet<InterviewState> = new Set([
 export default function PushToTalkButton({ state, session, actions }: Props) {
   const [localTranscript, setLocalTranscript] = useState('');
 
-  // Track whether we've already synced the finalTranscript into the local field
-  // for this REVIEW/REDO session so user edits are not overwritten.
   const transcriptSyncedRef = useRef(false);
 
-  // Sync finalTranscript to local field when it first arrives or when state
-  // transitions into REVIEW/REDO.
   useEffect(() => {
     if (state !== 'REVIEW' && state !== 'REDO') {
       transcriptSyncedRef.current = false;
@@ -54,7 +51,6 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
     }
   }, [state, session.finalTranscript]);
 
-  // Reset local transcript when entering a fresh REDO (ptt.reset clears finalTranscript)
   useEffect(() => {
     if (state === 'REDO' && session.finalTranscript === null) {
       setLocalTranscript('');
@@ -73,12 +69,11 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
   };
 
   const handlePTTMouseLeave = () => {
-    // Safety release: if the user drags off the button while holding
     if (state === 'RECORDING') actions.releasePTT();
   };
 
   const handlePTTTouchStart = (e: React.TouchEvent) => {
-    e.preventDefault(); // prevent ghost mouse events
+    e.preventDefault();
     void actions.pressPTT();
   };
 
@@ -118,16 +113,16 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
   if (!PTT_VISIBLE_STATES.has(state)) return null;
 
   // =========================================================================
-  // MEDIA_ERROR state (or microphoneError set in any voice state)
+  // MEDIA_ERROR state
   // =========================================================================
 
   if (state === 'MEDIA_ERROR' || session.microphoneError) {
     return (
-      <div style={styles.container}>
-        <p style={styles.errorText}>{session.microphoneError}</p>
+      <div className="flex flex-col gap-2 items-stretch">
+        <p className="text-sm text-grey leading-normal m-0">{session.microphoneError}</p>
         <button
           onClick={() => void actions.retryMicrophone()}
-          style={styles.retryButton}
+          className="btn-secondary self-start py-2.5 px-5 text-[13px] border-horizon-red text-horizon-red"
         >
           Retry Microphone
         </button>
@@ -142,7 +137,7 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
   if (state === 'REVIEW') {
     const hasTranscript = session.finalTranscript !== null;
     return (
-      <div style={styles.container}>
+      <div className="flex flex-col gap-2 items-stretch">
         <textarea
           value={localTranscript}
           onChange={(e) => handleTranscriptChange(e.target.value)}
@@ -151,44 +146,36 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
           onKeyDown={handleTranscriptKeyDown}
           placeholder={hasTranscript ? undefined : 'Transcribing…'}
           rows={3}
-          style={styles.transcriptArea}
+          className="input-field text-[15px] leading-relaxed resize-y border-ivory-tint bg-ivory-tint"
         />
 
-        {/* Auto-send indicator */}
         {hasTranscript && (
-          <p style={styles.autoSendHint}>Sending in a moment…</p>
+          <p className="text-xs text-grey m-0">Sending in a moment…</p>
         )}
 
-        <div style={styles.reviewRow}>
-          {/* Redo button */}
+        <div className="flex gap-2 items-center flex-wrap">
           <button
             onClick={() => void actions.redo()}
-            style={styles.redoButton}
+            className="btn-secondary py-2.5 px-5 text-[13px] text-grey border-ivory-tint"
           >
             Redo
           </button>
 
-          {/* Manual send */}
           <button
             onClick={() => void actions.submitVoice()}
             disabled={!hasTranscript && localTranscript.trim() === ''}
-            style={{
-              ...styles.sendButton,
-              opacity: hasTranscript || localTranscript.trim() ? 1 : 0.4,
-              cursor: hasTranscript || localTranscript.trim() ? 'pointer' : 'not-allowed',
-            }}
+            className="btn-primary py-2.5 px-6 text-[13px]"
           >
             Send
           </button>
 
-          {/* PTT re-record button */}
           <button
             onMouseDown={handlePTTMouseDown}
             onMouseUp={handlePTTMouseUp}
             onMouseLeave={handlePTTMouseLeave}
             onTouchStart={handlePTTTouchStart}
             onTouchEnd={handlePTTTouchEnd}
-            style={styles.pttButtonSmall}
+            className="btn-secondary py-2.5 px-5 text-[13px] border-horizon-red text-horizon-red select-none touch-none"
             aria-label="Re-record answer"
           >
             ● Re-record
@@ -204,27 +191,27 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
 
   if (state === 'RECORDING') {
     return (
-      <div style={styles.container}>
-        {/* Live partial transcript */}
+      <div className="flex flex-col gap-2 items-stretch">
         {session.partialTranscript && (
-          <p style={styles.partialTranscript}>{session.partialTranscript}</p>
+          <p className="text-[15px] text-graphite leading-relaxed py-2 px-0.5 opacity-70 italic">
+            {session.partialTranscript}
+          </p>
         )}
 
-        {/* Warning at 4-minute mark */}
         {session.nearingTimeLimit && (
-          <p style={styles.timeLimitWarning}>1 minute remaining</p>
+          <p className="text-xs text-horizon-red m-0">1 minute remaining</p>
         )}
 
-        {/* Recording button — release to stop */}
         <button
           onMouseUp={handlePTTMouseUp}
           onMouseLeave={handlePTTMouseLeave}
           onTouchEnd={handlePTTTouchEnd}
-          style={styles.pttButtonRecording}
+          className="btn-primary flex items-center justify-center gap-2.5 py-3.5 px-8 text-[15px]
+                     select-none touch-none animate-arena-ptt-pulse"
           aria-label="Release to stop recording"
           aria-pressed
         >
-          <span style={styles.recordingDot} />
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-white shrink-0" />
           Recording… release to stop
         </button>
       </div>
@@ -238,7 +225,7 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
   if (state === 'REDO') {
     const canSendText = localTranscript.trim().length > 0;
     return (
-      <div style={styles.container}>
+      <div className="flex flex-col gap-2 items-stretch">
         <textarea
           value={localTranscript}
           onChange={(e) => handleTranscriptChange(e.target.value)}
@@ -247,31 +234,30 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
           onKeyDown={handleTranscriptKeyDown}
           placeholder="Edit your response, or hold the button below to re-record…"
           rows={3}
-          style={styles.transcriptArea}
+          className="input-field text-[15px] leading-relaxed resize-y border-ivory-tint bg-ivory-tint"
         />
 
-        <div style={styles.redoRow}>
-          {/* PTT button */}
+        <div className="flex gap-2 items-center">
           <button
             onMouseDown={handlePTTMouseDown}
             onMouseUp={handlePTTMouseUp}
             onMouseLeave={handlePTTMouseLeave}
             onTouchStart={handlePTTTouchStart}
             onTouchEnd={handlePTTTouchEnd}
-            style={styles.pttButton}
+            className="btn-primary flex items-center justify-center gap-2 py-3.5 px-8 text-[15px]
+                       select-none touch-none tracking-[0.01em]"
             aria-label="Hold to speak"
           >
             ● Hold to Speak
           </button>
 
-          {/* Send edited text */}
           {canSendText && (
             <button
               onClick={() => {
                 const wasPreviouslyVoice = session.finalTranscript !== null;
                 actions.submitEditedTranscript(localTranscript, !wasPreviouslyVoice);
               }}
-              style={styles.sendButton}
+              className="btn-primary py-2.5 px-6 text-[13px]"
             >
               Send
             </button>
@@ -286,7 +272,7 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
   // =========================================================================
 
   return (
-    <div style={styles.container}>
+    <div className="flex flex-col gap-2 items-stretch">
       <button
         onMouseDown={handlePTTMouseDown}
         onMouseUp={handlePTTMouseUp}
@@ -294,11 +280,11 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
         onTouchStart={handlePTTTouchStart}
         onTouchEnd={handlePTTTouchEnd}
         disabled={!!session.microphoneError}
-        style={{
-          ...styles.pttButton,
-          opacity: session.microphoneError ? 0.4 : 1,
-          cursor: session.microphoneError ? 'not-allowed' : 'pointer',
-        }}
+        className={cn(
+          'btn-primary flex items-center justify-center gap-2 py-3.5 px-8 text-[15px]',
+          'select-none touch-none tracking-[0.01em]',
+          session.microphoneError && 'opacity-40 cursor-not-allowed'
+        )}
         aria-label="Hold to speak"
       >
         ● Hold to Speak
@@ -306,187 +292,3 @@ export default function PushToTalkButton({ state, session, actions }: Props) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 8,
-    alignItems: 'stretch',
-  },
-
-  // Pill PTT button (idle)
-  pttButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    padding: '14px 32px',
-    borderRadius: 999,
-    border: 'none',
-    backgroundColor: 'var(--horizon-red)',
-    color: 'var(--white)',
-    fontFamily: 'var(--font-primary)',
-    fontWeight: 600,
-    fontSize: 15,
-    cursor: 'pointer',
-    userSelect: 'none' as const,
-    WebkitUserSelect: 'none' as const,
-    touchAction: 'none' as const,
-    transition: 'opacity 0.15s',
-    letterSpacing: '0.01em',
-  },
-
-  // Small PTT button used in REVIEW row
-  pttButtonSmall: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    padding: '10px 20px',
-    borderRadius: 999,
-    border: '1px solid var(--horizon-red)',
-    backgroundColor: 'transparent',
-    color: 'var(--horizon-red)',
-    fontFamily: 'var(--font-primary)',
-    fontWeight: 600,
-    fontSize: 13,
-    cursor: 'pointer',
-    userSelect: 'none' as const,
-    WebkitUserSelect: 'none' as const,
-    touchAction: 'none' as const,
-  },
-
-  // PTT button during active recording
-  pttButtonRecording: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    padding: '14px 32px',
-    borderRadius: 999,
-    border: 'none',
-    backgroundColor: 'var(--horizon-red)',
-    color: 'var(--white)',
-    fontFamily: 'var(--font-primary)',
-    fontWeight: 600,
-    fontSize: 15,
-    cursor: 'pointer',
-    userSelect: 'none' as const,
-    WebkitUserSelect: 'none' as const,
-    touchAction: 'none' as const,
-    animation: 'arena-ptt-pulse 1.5s ease-in-out infinite',
-  },
-
-  recordingDot: {
-    display: 'inline-block',
-    width: 10,
-    height: 10,
-    borderRadius: '50%',
-    backgroundColor: 'var(--white)',
-    flexShrink: 0,
-  },
-
-  // Transcript textarea (REVIEW / REDO)
-  transcriptArea: {
-    width: '100%',
-    padding: '12px 14px',
-    borderRadius: 8,
-    border: '1px solid var(--ivory-tint)',
-    backgroundColor: 'var(--ivory-tint)',
-    fontFamily: 'var(--font-primary)',
-    fontSize: 15,
-    color: 'var(--graphite)',
-    lineHeight: 1.55,
-    resize: 'vertical' as const,
-    outline: 'none',
-    boxSizing: 'border-box' as const,
-  },
-
-  partialTranscript: {
-    fontFamily: 'var(--font-primary)',
-    fontSize: 15,
-    color: 'var(--graphite)',
-    lineHeight: 1.55,
-    padding: '8px 2px',
-    opacity: 0.7,
-    fontStyle: 'italic',
-  },
-
-  autoSendHint: {
-    fontFamily: 'var(--font-primary)',
-    fontSize: 12,
-    color: 'var(--grey)',
-    margin: 0,
-  },
-
-  reviewRow: {
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center',
-    flexWrap: 'wrap' as const,
-  },
-
-  redoRow: {
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center',
-  },
-
-  redoButton: {
-    padding: '10px 20px',
-    borderRadius: 999,
-    border: '1px solid var(--ivory-tint)',
-    backgroundColor: 'transparent',
-    color: 'var(--grey)',
-    fontFamily: 'var(--font-primary)',
-    fontWeight: 500,
-    fontSize: 13,
-    cursor: 'pointer',
-  },
-
-  sendButton: {
-    padding: '10px 24px',
-    borderRadius: 999,
-    border: 'none',
-    backgroundColor: 'var(--horizon-red)',
-    color: 'var(--white)',
-    fontFamily: 'var(--font-primary)',
-    fontWeight: 600,
-    fontSize: 13,
-    cursor: 'pointer',
-    transition: 'opacity 0.15s',
-  },
-
-  errorText: {
-    fontFamily: 'var(--font-primary)',
-    fontSize: 14,
-    color: 'var(--grey)',
-    lineHeight: 1.5,
-    margin: 0,
-  },
-
-  retryButton: {
-    padding: '10px 20px',
-    borderRadius: 999,
-    border: '1px solid var(--horizon-red)',
-    backgroundColor: 'transparent',
-    color: 'var(--horizon-red)',
-    fontFamily: 'var(--font-primary)',
-    fontWeight: 600,
-    fontSize: 13,
-    cursor: 'pointer',
-    alignSelf: 'flex-start' as const,
-  },
-
-  timeLimitWarning: {
-    fontFamily: 'var(--font-primary)',
-    fontSize: 12,
-    color: 'var(--horizon-red)',
-    margin: 0,
-  },
-} as const;

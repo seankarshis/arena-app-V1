@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import { useQuery, useMutation, gql } from '@apollo/client';
+import { cn } from '@/lib/utils';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -97,64 +99,6 @@ const REMOVE_TEMPLATE = gql`
 `;
 
 // ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const primaryBtn: React.CSSProperties = {
-  padding: '8px 16px',
-  borderRadius: 999,
-  border: 'none',
-  backgroundColor: 'var(--horizon-red)',
-  color: 'var(--white)',
-  fontFamily: 'var(--font-primary)',
-  fontWeight: 600,
-  fontSize: 13,
-  cursor: 'pointer',
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: '1px solid var(--grey)',
-  backgroundColor: 'var(--ivory-tint)',
-  fontFamily: 'var(--font-primary)',
-  fontSize: 14,
-  color: 'var(--graphite)',
-  outline: 'none',
-};
-
-const colHeader: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 600,
-  color: 'var(--grey)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.07em',
-};
-
-// ---------------------------------------------------------------------------
-// ConsentBadge
-// ---------------------------------------------------------------------------
-
-function ConsentBadge({ granted, label }: { granted: boolean; label: string }) {
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 8px',
-        borderRadius: 999,
-        fontSize: 11,
-        fontWeight: 600,
-        backgroundColor: granted ? '#DCFCE7' : '#F3F4F6',
-        color: granted ? '#15803D' : '#6B7280',
-        marginRight: 6,
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // UserManager
 // ---------------------------------------------------------------------------
 
@@ -208,74 +152,37 @@ export default function UserManager() {
   return (
     <>
       {/* Header */}
-      <header
-        style={{
-          padding: '20px 32px',
-          borderBottom: '1px solid var(--ivory-tint)',
-          backgroundColor: 'var(--white)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}
-      >
+      <header className="page-header">
         <div>
-          <h2 style={{ fontWeight: 600, fontSize: 22, color: 'var(--graphite)' }}>Users</h2>
-          <p style={{ color: 'var(--grey)', fontSize: 14 }}>
+          <h2 className="font-semibold text-[22px] text-graphite">Users</h2>
+          <p className="text-grey text-sm">
             View users, manage template assignments, and check consent status.
           </p>
         </div>
       </header>
 
       {/* Content */}
-      <div style={{ padding: '24px 32px' }}>
+      <div className="page-content">
         {error && (
-          <div
-            role="alert"
-            style={{
-              backgroundColor: '#FEE2E2',
-              border: '1px solid #FCA5A5',
-              borderRadius: 8,
-              padding: '12px 16px',
-              marginBottom: 16,
-              color: '#B91C1C',
-              fontSize: 14,
-            }}
-          >
+          <div role="alert" className="alert-error">
             Failed to load users: {error.message}
           </div>
         )}
 
         {loading && users.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--grey)', fontSize: 15 }}>
+          <div className="text-center py-16 text-grey text-[15px]">
             Loading users…
           </div>
         ) : users.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--grey)', fontSize: 15 }}>
+          <div className="text-center py-16 text-grey text-[15px]">
             No users found.
           </div>
         ) : (
-          <div
-            style={{
-              backgroundColor: 'var(--white)',
-              borderRadius: 12,
-              border: '1px solid var(--ivory-tint)',
-              overflow: 'hidden',
-            }}
-          >
+          <div className="bg-white rounded-xl border border-ivory-tint overflow-hidden">
             {/* Table header */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 80px 120px 100px',
-                padding: '11px 18px',
-                borderBottom: '1px solid var(--ivory-tint)',
-                backgroundColor: 'var(--ivory)',
-                gap: 12,
-              }}
-            >
+            <div className="grid grid-cols-[1fr_1fr_80px_120px_100px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
               {['Name', 'Email', 'Role', 'Templates', 'Consent'].map((h) => (
-                <span key={h} style={colHeader}>
+                <span key={h} className="col-header">
                   {h}
                 </span>
               ))}
@@ -291,106 +198,60 @@ export default function UserManager() {
                   {/* Main row */}
                   <div
                     onClick={() => toggleExpand(user.id)}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr 80px 120px 100px',
-                      padding: '14px 18px',
-                      borderBottom: expanded ? 'none' : i < users.length - 1 ? '1px solid var(--ivory-tint)' : 'none',
-                      alignItems: 'center',
-                      gap: 12,
-                      cursor: 'pointer',
-                      backgroundColor: i % 2 === 0 ? 'var(--white)' : 'var(--ivory)',
-                      transition: 'background-color 0.1s',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(122,14,19,0.03)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? 'var(--white)' : 'var(--ivory)'; }}
+                    className={cn(
+                      'grid grid-cols-[1fr_1fr_80px_120px_100px] py-3.5 px-[18px] items-center gap-3 cursor-pointer transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                      !expanded && i < users.length - 1 && 'border-b border-ivory-tint',
+                      i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint',
+                    )}
                   >
-                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--graphite)' }}>
+                    <span className="text-sm font-medium text-graphite">
                       {user.name}
                     </span>
 
-                    <span style={{ fontSize: 14, color: 'var(--grey)' }}>{user.email}</span>
+                    <span className="text-sm text-grey">{user.email}</span>
 
                     <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '3px 10px',
-                        borderRadius: 999,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        backgroundColor: user.role === 'admin' ? '#F3E8FF' : '#F3F4F6',
-                        color: user.role === 'admin' ? '#7C3AED' : '#6B7280',
-                        width: 'fit-content',
-                      }}
+                      className={cn(
+                        'badge',
+                        user.role === 'admin'
+                          ? 'bg-horizon-red text-white'
+                          : 'bg-graphite text-white',
+                      )}
                     >
                       {user.role}
                     </span>
 
-                    <span
-                      style={{
-                        fontSize: 14,
-                        color: 'var(--graphite)',
-                        fontFamily: 'var(--font-mono)',
-                      }}
-                    >
+                    <span className="text-sm text-graphite font-mono">
                       {activeAssignments.length}
                     </span>
 
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '3px 10px',
-                        borderRadius: 999,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        backgroundColor: user.consentStatus.allGranted ? '#DCFCE7' : '#FEF3C7',
-                        color: user.consentStatus.allGranted ? '#15803D' : '#92400E',
-                        width: 'fit-content',
-                      }}
-                    >
-                      {user.consentStatus.allGranted ? 'All granted' : 'Incomplete'}
-                    </span>
+                    <StatusBadge
+                      status={user.consentStatus.allGranted ? 'granted' : 'denied'}
+                    />
                   </div>
 
                   {/* Expanded detail */}
                   {expanded && (
                     <div
-                      style={{
-                        padding: '16px 18px 20px',
-                        borderBottom: i < users.length - 1 ? '1px solid var(--ivory-tint)' : 'none',
-                        backgroundColor: 'rgba(122,14,19,0.02)',
-                      }}
+                      className={cn(
+                        'py-4 px-[18px] pb-5 bg-horizon-red/[0.02]',
+                        i < users.length - 1 && 'border-b border-ivory-tint',
+                      )}
                     >
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+                      <div className="grid grid-cols-2 gap-6">
                         {/* Left: tags + consent */}
                         <div>
-                          <h4
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 600,
-                              color: 'var(--graphite)',
-                              marginBottom: 8,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.05em',
-                            }}
-                          >
+                          <h4 className="text-[13px] font-semibold text-graphite mb-2 uppercase tracking-wide">
                             Tags
                           </h4>
                           {user.tags.length === 0 ? (
-                            <p style={{ fontSize: 13, color: 'var(--grey)' }}>No tags assigned</p>
+                            <p className="text-[13px] text-grey">No tags assigned</p>
                           ) : (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            <div className="flex flex-wrap gap-1.5">
                               {user.tags.map((tag) => (
                                 <span
                                   key={tag.id}
-                                  style={{
-                                    padding: '3px 10px',
-                                    borderRadius: 999,
-                                    fontSize: 12,
-                                    fontWeight: 500,
-                                    backgroundColor: 'var(--ivory-tint)',
-                                    color: 'var(--graphite)',
-                                  }}
+                                  className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-ivory-tint text-graphite"
                                 >
                                   {tag.label}
                                 </span>
@@ -398,71 +259,38 @@ export default function UserManager() {
                             </div>
                           )}
 
-                          <h4
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 600,
-                              color: 'var(--graphite)',
-                              marginBottom: 8,
-                              marginTop: 16,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.05em',
-                            }}
-                          >
+                          <h4 className="text-[13px] font-semibold text-graphite mb-2 mt-4 uppercase tracking-wide">
                             Consent
                           </h4>
-                          <div>
-                            <ConsentBadge granted={user.consentStatus.dataProcessing} label="Data Processing" />
-                            <ConsentBadge granted={user.consentStatus.audioRecording} label="Audio Recording" />
-                            <ConsentBadge granted={user.consentStatus.aiInteraction} label="AI Interaction" />
+                          <div className="flex flex-wrap gap-1.5">
+                            <StatusBadge status={user.consentStatus.dataProcessing ? 'granted' : 'denied'} />
+                            <StatusBadge status={user.consentStatus.audioRecording ? 'granted' : 'denied'} />
+                            <StatusBadge status={user.consentStatus.aiInteraction ? 'granted' : 'denied'} />
                           </div>
                         </div>
 
                         {/* Right: template assignments */}
                         <div>
-                          <h4
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 600,
-                              color: 'var(--graphite)',
-                              marginBottom: 8,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.05em',
-                            }}
-                          >
+                          <h4 className="text-[13px] font-semibold text-graphite mb-2 uppercase tracking-wide">
                             Template Assignments
                           </h4>
 
                           {activeAssignments.length === 0 ? (
-                            <p style={{ fontSize: 13, color: 'var(--grey)', marginBottom: 12 }}>
+                            <p className="text-[13px] text-grey mb-3">
                               No active assignments
                             </p>
                           ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                            <div className="flex flex-col gap-2 mb-3">
                               {activeAssignments.map((a) => (
                                 <div
                                   key={a.id}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    padding: '8px 12px',
-                                    backgroundColor: 'var(--white)',
-                                    borderRadius: 8,
-                                    border: '1px solid var(--ivory-tint)',
-                                  }}
+                                  className="flex items-center justify-between py-2 px-3 bg-white rounded-lg border border-ivory-tint"
                                 >
                                   <div>
-                                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--graphite)' }}>
+                                    <span className="text-sm font-medium text-graphite">
                                       {a.template.name}
                                     </span>
-                                    <span
-                                      style={{
-                                        fontSize: 12,
-                                        color: 'var(--grey)',
-                                        marginLeft: 10,
-                                      }}
-                                    >
+                                    <span className="text-xs text-grey ml-2.5">
                                       Assigned {new Date(a.assignedAt).toLocaleDateString()}
                                     </span>
                                   </div>
@@ -472,16 +300,10 @@ export default function UserManager() {
                                       void handleRemove(user.id, a.template.id);
                                     }}
                                     disabled={removing}
-                                    style={{
-                                      background: 'none',
-                                      border: 'none',
-                                      color: '#B91C1C',
-                                      cursor: removing ? 'not-allowed' : 'pointer',
-                                      fontSize: 18,
-                                      lineHeight: 1,
-                                      padding: '0 4px',
-                                      fontFamily: 'var(--font-primary)',
-                                    }}
+                                    className={cn(
+                                      'bg-transparent border-none text-red-700 text-lg leading-none px-1 font-primary',
+                                      removing ? 'cursor-not-allowed' : 'cursor-pointer',
+                                    )}
                                     title="Remove assignment"
                                   >
                                     ×
@@ -492,11 +314,11 @@ export default function UserManager() {
                           )}
 
                           {/* Assign new template */}
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <div className="flex gap-2 items-center">
                             <select
                               value={assignTemplateId}
                               onChange={(e) => setAssignTemplateId(e.target.value)}
-                              style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
+                              className="input-field text-sm flex-1 cursor-pointer"
                             >
                               <option value="">Select template…</option>
                               {publishedTemplates
@@ -513,27 +335,17 @@ export default function UserManager() {
                                 void handleAssign(user.id);
                               }}
                               disabled={!assignTemplateId || assigning}
-                              style={{
-                                ...primaryBtn,
-                                opacity: !assignTemplateId || assigning ? 0.5 : 1,
-                                cursor: !assignTemplateId || assigning ? 'not-allowed' : 'pointer',
-                              }}
+                              className={cn(
+                                'btn-primary',
+                                (!assignTemplateId || assigning) && 'opacity-50 cursor-not-allowed',
+                              )}
                             >
                               {assigning ? 'Assigning…' : 'Assign'}
                             </button>
                           </div>
 
                           {assignError && (
-                            <p
-                              style={{
-                                color: '#B91C1C',
-                                fontSize: 13,
-                                marginTop: 8,
-                                padding: '6px 10px',
-                                backgroundColor: '#FEE2E2',
-                                borderRadius: 6,
-                              }}
-                            >
+                            <p className="text-red-700 text-[13px] mt-2 py-1.5 px-2.5 bg-red-100 rounded-md">
                               {assignError}
                             </p>
                           )}

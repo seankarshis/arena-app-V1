@@ -13,30 +13,11 @@ interface Props {
 
 function StatItem({ value, label }: { value: number | string; label: string }) {
   return (
-    <div style={{ flex: 1, textAlign: 'center' }}>
-      <div
-        style={{
-          fontFamily: 'var(--font-primary)',
-          fontWeight: 700,
-          fontSize: 36,
-          color: 'var(--graphite)',
-          lineHeight: 1,
-          marginBottom: 6,
-          letterSpacing: '-0.02em',
-        }}
-      >
+    <div className="flex-1 text-center">
+      <div className="font-bold text-4xl text-graphite leading-none mb-1.5 tracking-[-0.02em]">
         {value}
       </div>
-      <div
-        style={{
-          fontFamily: 'var(--font-primary)',
-          fontWeight: 400,
-          fontSize: 12,
-          color: 'var(--grey)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-        }}
-      >
+      <div className="text-xs text-grey uppercase tracking-[0.06em]">
         {label}
       </div>
     </div>
@@ -54,32 +35,10 @@ export default function CompletionSummary({ session, onGoHome }: Props) {
   const completionPct = total > 0 ? Math.round((answered / total) * 100) : 0;
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'var(--ivory)',
-        fontFamily: 'var(--font-primary)',
-        padding: '24px',
-      }}
-    >
-      <div style={{ maxWidth: 520, width: '100%' }}>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-ivory p-6">
+      <div className="max-w-[520px] w-full">
         {/* Check icon */}
-        <div
-          style={{
-            width: 72,
-            height: 72,
-            borderRadius: '50%',
-            backgroundColor: 'var(--dark-maroon)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 32px',
-          }}
-        >
+        <div className="w-[72px] h-[72px] rounded-full bg-dark-maroon flex items-center justify-center mx-auto mb-8">
           <svg
             width="32"
             height="32"
@@ -94,134 +53,46 @@ export default function CompletionSummary({ session, onGoHome }: Props) {
           </svg>
         </div>
 
-        <h1
-          style={{
-            fontFamily: 'var(--font-primary)',
-            fontWeight: 600,
-            fontSize: 28,
-            color: 'var(--graphite)',
-            textAlign: 'center',
-            marginBottom: 10,
-            letterSpacing: '-0.01em',
-          }}
-        >
+        <h1 className="font-semibold text-[28px] text-graphite text-center mb-2.5 tracking-[-0.01em]">
           Interview Complete
         </h1>
 
-        <p
-          style={{
-            fontFamily: 'var(--font-primary)',
-            fontWeight: 400,
-            fontSize: 16,
-            color: 'var(--grey)',
-            textAlign: 'center',
-            lineHeight: 1.6,
-            marginBottom: 40,
-          }}
-        >
+        <p className="text-base text-grey text-center leading-relaxed mb-10">
           Thank you for your time. Your responses are being reviewed.
         </p>
 
         {/* Stats card */}
         {total > 0 && (
-          <div
-            style={{
-              backgroundColor: 'var(--white)',
-              border: '1px solid var(--ivory-tint)',
-              borderRadius: 12,
-              padding: '28px 32px',
-              marginBottom: 12,
-            }}
-          >
-            <p
-              style={{
-                fontFamily: 'var(--font-primary)',
-                fontWeight: 600,
-                fontSize: 11,
-                color: 'var(--grey)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                marginBottom: 24,
-              }}
-            >
+          <div className="card p-7 px-8 mb-3">
+            <p className="font-semibold text-2xs text-grey uppercase tracking-[0.08em] mb-6">
               Session Summary
             </p>
 
-            <div
-              style={{
-                display: 'flex',
-                gap: 0,
-                alignItems: 'stretch',
-              }}
-            >
+            <div className="flex items-stretch">
               <StatItem value={answered} label="Answered" />
 
               {skipped > 0 && (
                 <>
-                  <div
-                    style={{
-                      width: 1,
-                      backgroundColor: 'var(--ivory-tint)',
-                      margin: '4px 16px',
-                      flexShrink: 0,
-                    }}
-                  />
+                  <div className="w-px bg-ivory-tint my-1 mx-4 shrink-0" />
                   <StatItem value={skipped} label="Skipped" />
                 </>
               )}
 
-              <div
-                style={{
-                  width: 1,
-                  backgroundColor: 'var(--ivory-tint)',
-                  margin: '4px 16px',
-                  flexShrink: 0,
-                }}
-              />
+              <div className="w-px bg-ivory-tint my-1 mx-4 shrink-0" />
               <StatItem value={total} label="Total" />
 
-              <div
-                style={{
-                  width: 1,
-                  backgroundColor: 'var(--ivory-tint)',
-                  margin: '4px 16px',
-                  flexShrink: 0,
-                }}
-              />
+              <div className="w-px bg-ivory-tint my-1 mx-4 shrink-0" />
               <StatItem value={`${completionPct}%`} label="Completion" />
             </div>
           </div>
         )}
 
-        <p
-          style={{
-            fontFamily: 'var(--font-primary)',
-            fontSize: 13,
-            color: 'var(--grey)',
-            textAlign: 'center',
-            marginBottom: 36,
-            lineHeight: 1.55,
-          }}
-        >
+        <p className="text-[13px] text-grey text-center mb-9 leading-relaxed">
           A member of the Elastic Horizon team will be in touch with next steps.
         </p>
 
-        <div style={{ textAlign: 'center' }}>
-          <button
-            onClick={onGoHome}
-            style={{
-              padding: '14px 44px',
-              borderRadius: 999,
-              border: 'none',
-              backgroundColor: 'var(--horizon-red)',
-              color: 'var(--white)',
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 15,
-              cursor: 'pointer',
-              letterSpacing: '0.01em',
-            }}
-          >
+        <div className="text-center">
+          <button onClick={onGoHome} className="btn-copper py-3.5 px-11 text-[15px]">
             Back to Home
           </button>
         </div>

@@ -2,6 +2,8 @@
 
 import { useState, useRef } from 'react';
 import { useQuery, useMutation, gql } from '@apollo/client';
+import { cn } from '@/lib/utils';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -158,54 +160,6 @@ const UPDATE_QUESTION = gql`
 const PAGE_SIZE = 25;
 
 // ---------------------------------------------------------------------------
-// Shared styles
-// ---------------------------------------------------------------------------
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontFamily: 'var(--font-primary)',
-  fontWeight: 500,
-  fontSize: 14,
-  color: 'var(--graphite)',
-  marginBottom: 6,
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: '1px solid var(--grey)',
-  backgroundColor: 'var(--ivory-tint)',
-  fontFamily: 'var(--font-primary)',
-  fontSize: 14,
-  color: 'var(--graphite)',
-  outline: 'none',
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: 999,
-  border: 'none',
-  backgroundColor: 'var(--horizon-red)',
-  color: 'var(--white)',
-  fontFamily: 'var(--font-primary)',
-  fontWeight: 600,
-  fontSize: 14,
-  cursor: 'pointer',
-};
-
-const secondaryBtnStyle: React.CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: 999,
-  border: '1px solid var(--ivory-tint)',
-  backgroundColor: 'var(--white)',
-  color: 'var(--graphite)',
-  fontFamily: 'var(--font-primary)',
-  fontWeight: 500,
-  fontSize: 14,
-  cursor: 'pointer',
-};
-
-// ---------------------------------------------------------------------------
 // QuestionModal — create / edit
 // ---------------------------------------------------------------------------
 
@@ -248,68 +202,38 @@ function QuestionModal({ mode, question, allTags, allCategories, onSave, onClose
   const canSubmit = text.trim().length > 0 && category.trim().length > 0;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(26,26,26,0.5)',
-      }}
-    >
-      <div
-        style={{
-          backgroundColor: 'var(--white)',
-          borderRadius: 12,
-          padding: 32,
-          width: '100%',
-          maxWidth: 560,
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-        }}
-      >
-        <h2
-          style={{
-            fontFamily: 'var(--font-primary)',
-            fontWeight: 600,
-            fontSize: 20,
-            color: 'var(--graphite)',
-            marginBottom: 24,
-          }}
-        >
+    <div className="modal-backdrop">
+      <div className="modal-panel max-w-[560px]">
+        <h2 className="font-semibold text-xl text-graphite mb-6">
           {mode === 'create' ? 'Create Question' : 'Edit Question'}
         </h2>
 
         <form onSubmit={handleSubmit}>
           {/* Text */}
-          <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>Question Text</label>
+          <div className="mb-5">
+            <label className="block font-medium text-sm text-graphite mb-1.5">
+              Question Text
+            </label>
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               required
               rows={4}
-              style={{
-                ...inputStyle,
-                resize: 'vertical',
-                display: 'block',
-                width: '100%',
-              }}
+              className="input-field text-sm block w-full resize-y"
               placeholder="Enter question text…"
             />
           </div>
 
           {/* Category */}
-          <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>Category</label>
+          <div className="mb-5">
+            <label className="block font-medium text-sm text-graphite mb-1.5">
+              Category
+            </label>
             <select
               value={categorySelect}
               onChange={(e) => setCategorySelect(e.target.value)}
               required
-              style={{ ...inputStyle, display: 'block', width: '100%', cursor: 'pointer' }}
+              className="input-field text-sm block w-full cursor-pointer"
             >
               <option value="" disabled>Select a category…</option>
               {allCategories.map((c) => (
@@ -323,58 +247,39 @@ function QuestionModal({ mode, question, allTags, allCategories, onSave, onClose
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
                 autoFocus
-                style={{ ...inputStyle, display: 'block', width: '100%', marginTop: 8 }}
+                className="input-field text-sm block w-full mt-2"
                 placeholder="Enter new category name…"
               />
             )}
           </div>
 
           {/* Tags */}
-          <div style={{ marginBottom: 24 }}>
-            <label style={labelStyle}>Tags</label>
+          <div className="mb-6">
+            <label className="block font-medium text-sm text-graphite mb-1.5">
+              Tags
+            </label>
             {allTags.length === 0 ? (
-              <p style={{ color: 'var(--grey)', fontSize: 14 }}>No active tags available.</p>
+              <p className="text-grey text-sm">No active tags available.</p>
             ) : (
-              <div
-                style={{
-                  border: '1px solid var(--ivory-tint)',
-                  borderRadius: 8,
-                  padding: 12,
-                  maxHeight: 220,
-                  overflowY: 'auto',
-                  backgroundColor: 'var(--ivory)',
-                }}
-              >
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <div className="border border-ivory-tint rounded p-3 max-h-[220px] overflow-y-auto bg-ivory">
+                <div className="flex flex-wrap gap-2">
                   {allTags.map((tag) => {
                     const selected = selectedTagIds.includes(tag.id);
                     return (
                       <label
                         key={tag.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          cursor: 'pointer',
-                          padding: '5px 12px',
-                          borderRadius: 999,
-                          fontSize: 13,
-                          border: selected
-                            ? '1.5px solid var(--horizon-red)'
-                            : '1.5px solid var(--ivory-tint)',
-                          backgroundColor: selected
-                            ? 'rgba(122,14,19,0.07)'
-                            : 'var(--white)',
-                          color: selected ? 'var(--horizon-red)' : 'var(--graphite)',
-                          transition: 'all 0.12s',
-                          userSelect: 'none',
-                        }}
+                        className={cn(
+                          'flex items-center gap-1.5 cursor-pointer py-[5px] px-3 rounded-md text-[13px] transition-all select-none',
+                          selected
+                            ? 'border-[1.5px] border-horizon-red bg-horizon-red/[0.07] text-horizon-red'
+                            : 'border-[1.5px] border-ivory-tint bg-white text-graphite'
+                        )}
                       >
                         <input
                           type="checkbox"
                           checked={selected}
                           onChange={() => toggleTag(tag.id)}
-                          style={{ display: 'none' }}
+                          className="hidden"
                         />
                         {tag.label}
                       </label>
@@ -385,38 +290,24 @@ function QuestionModal({ mode, question, allTags, allCategories, onSave, onClose
             )}
           </div>
 
-          {error && (
-            <p
-              style={{
-                color: 'var(--horizon-red)',
-                fontSize: 14,
-                marginBottom: 16,
-                padding: '8px 12px',
-                backgroundColor: '#FEE2E2',
-                borderRadius: 6,
-              }}
-            >
-              {error}
-            </p>
-          )}
+          {error && <div className="alert-error mb-4">{error}</div>}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
               disabled={isSaving}
-              style={{ ...secondaryBtnStyle, opacity: isSaving ? 0.6 : 1 }}
+              className={cn('btn-secondary', isSaving && 'opacity-60')}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSaving || !canSubmit}
-              style={{
-                ...primaryBtnStyle,
-                opacity: isSaving || !canSubmit ? 0.5 : 1,
-                cursor: isSaving || !canSubmit ? 'not-allowed' : 'pointer',
-              }}
+              className={cn(
+                'btn-primary',
+                (isSaving || !canSubmit) && 'opacity-50 cursor-not-allowed'
+              )}
             >
               {isSaving ? 'Saving…' : 'Save Question'}
             </button>
@@ -445,93 +336,37 @@ function DeactivateWarningDialog({
   isLoading,
 }: WarningDialogProps) {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 60,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(26,26,26,0.55)',
-      }}
-    >
-      <div
-        style={{
-          backgroundColor: 'var(--white)',
-          borderRadius: 12,
-          padding: 32,
-          width: '100%',
-          maxWidth: 440,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-        }}
-      >
-        <h3
-          style={{
-            fontFamily: 'var(--font-primary)',
-            fontWeight: 600,
-            fontSize: 18,
-            color: 'var(--graphite)',
-            marginBottom: 12,
-          }}
-        >
+    <div className="modal-backdrop z-[60]">
+      <div className="modal-panel max-w-[440px]">
+        <h3 className="font-semibold text-lg text-graphite mb-3">
           Deactivate Question?
         </h3>
-        <p
-          style={{
-            color: 'var(--grey)',
-            fontSize: 14,
-            lineHeight: 1.6,
-            marginBottom: 4,
-            overflow: 'hidden',
-            maxHeight: '3em',
-          }}
-        >
-          <strong style={{ color: 'var(--graphite)' }}>&ldquo;{question.text}&rdquo;</strong>
+        <p className="text-grey text-sm leading-relaxed mb-1 overflow-hidden max-h-[3em]">
+          <strong className="text-graphite">&ldquo;{question.text}&rdquo;</strong>
         </p>
-        <p
-          style={{
-            color: 'var(--grey)',
-            fontSize: 14,
-            lineHeight: 1.6,
-            marginBottom: 16,
-          }}
-        >
+        <p className="text-grey text-sm leading-relaxed mb-4">
           Deactivating this question will hide it from the question bank. It may currently
           be included in one or more published templates.
         </p>
-        <div
-          style={{
-            backgroundColor: '#FEF3C7',
-            border: '1px solid #FDE68A',
-            borderRadius: 8,
-            padding: '10px 14px',
-            color: '#92400E',
-            fontSize: 13,
-            lineHeight: 1.5,
-            marginBottom: 24,
-          }}
-        >
+        <div className="bg-ivory-tint border border-ivory-tint rounded p-[10px_14px] text-graphite text-[13px] leading-normal mb-6">
           <strong>Warning:</strong> This question will no longer appear for new interviews that
           use any template it belongs to. Existing in-progress interviews are unaffected.
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+        <div className="flex justify-end gap-3">
           <button
             onClick={onCancel}
             disabled={isLoading}
-            style={{ ...secondaryBtnStyle, opacity: isLoading ? 0.6 : 1 }}
+            className={cn('btn-secondary', isLoading && 'opacity-60')}
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={isLoading}
-            style={{
-              ...primaryBtnStyle,
-              backgroundColor: '#B91C1C',
-              opacity: isLoading ? 0.6 : 1,
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-            }}
+            className={cn(
+              'btn-wine bg-arena-wine text-white',
+              isLoading && 'opacity-60 cursor-not-allowed'
+            )}
           >
             {isLoading ? 'Deactivating…' : 'Deactivate'}
           </button>
@@ -772,123 +607,67 @@ export default function QuestionBank() {
   return (
     <>
       {/* ---- Page header ---- */}
-      <header
-        style={{
-          padding: '20px 32px',
-          borderBottom: '1px solid var(--ivory-tint)',
-          backgroundColor: 'var(--white)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}
-      >
+      <header className="page-header flex items-center justify-between gap-4">
         <div>
-          <h2
-            style={{
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 22,
-              color: 'var(--graphite)',
-              marginBottom: 2,
-            }}
-          >
+          <h2 className="font-semibold text-[22px] text-graphite mb-0.5">
             Question Bank
           </h2>
-          <p style={{ color: 'var(--grey)', fontSize: 14 }}>
+          <p className="text-grey text-sm">
             Manage interview questions, categories, and tag associations.
           </p>
         </div>
-        <button onClick={openCreate} style={primaryBtnStyle}>
+        <button onClick={openCreate} className="btn-primary">
           + Create Question
         </button>
       </header>
 
       {/* ---- Filters bar ---- */}
-      <div
-        style={{
-          padding: '14px 32px',
-          backgroundColor: 'var(--white)',
-          borderBottom: '1px solid var(--ivory-tint)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          flexWrap: 'wrap',
-        }}
-      >
+      <div className="py-3.5 px-8 bg-white border-b border-ivory-tint flex items-center gap-3 flex-wrap">
         {/* Search input */}
         <input
           type="search"
           value={searchText}
           onChange={(e) => handleSearchChange(e.target.value)}
           placeholder="Search questions…"
-          style={{ ...inputStyle, width: 260 }}
+          className="input-field text-sm w-[260px]"
           aria-label="Search questions"
         />
 
         {/* Tag filter dropdown */}
-        <div style={{ position: 'relative' }}>
+        <div className="relative">
           <button
             onClick={() => setShowTagDropdown((prev) => !prev)}
             aria-expanded={showTagDropdown}
-            style={{
-              ...secondaryBtnStyle,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              borderColor:
-                filterTagIds.length > 0 ? 'var(--horizon-red)' : 'var(--ivory-tint)',
-              color: filterTagIds.length > 0 ? 'var(--horizon-red)' : 'var(--graphite)',
-            }}
+            className={cn(
+              'btn-secondary flex items-center gap-1.5',
+              filterTagIds.length > 0
+                ? 'border-horizon-red text-horizon-red'
+                : 'text-graphite'
+            )}
           >
             Filter by Tag
             {filterTagIds.length > 0 && (
-              <span
-                style={{
-                  backgroundColor: 'var(--horizon-red)',
-                  color: 'var(--white)',
-                  borderRadius: 999,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  padding: '1px 7px',
-                }}
-              >
+              <span className="bg-horizon-red text-white rounded-pill text-2xs font-semibold px-[7px] py-px">
                 {filterTagIds.length}
               </span>
             )}
-            <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+            <span className="text-[9px] opacity-60">&#9660;</span>
           </button>
 
           {showTagDropdown && (
             <>
               {/* Click-outside overlay */}
               <div
-                style={{ position: 'fixed', inset: 0, zIndex: 19 }}
+                className="fixed inset-0 z-[19]"
                 onClick={() => setShowTagDropdown(false)}
               />
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 6px)',
-                  left: 0,
-                  zIndex: 20,
-                  backgroundColor: 'var(--white)',
-                  border: '1px solid var(--ivory-tint)',
-                  borderRadius: 10,
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
-                  minWidth: 240,
-                  maxWidth: 320,
-                  maxHeight: 300,
-                  overflowY: 'auto',
-                  padding: '10px 4px',
-                }}
-              >
+              <div className="absolute top-[calc(100%+6px)] left-0 z-20 bg-white border border-ivory-tint rounded-[10px] min-w-[240px] max-w-[320px] max-h-[300px] overflow-y-auto py-2.5 px-1">
                 {tagsLoading ? (
-                  <p style={{ color: 'var(--grey)', fontSize: 13, padding: '6px 12px' }}>
+                  <p className="text-grey text-[13px] py-1.5 px-3">
                     Loading…
                   </p>
                 ) : allTags.length === 0 ? (
-                  <p style={{ color: 'var(--grey)', fontSize: 13, padding: '6px 12px' }}>
+                  <p className="text-grey text-[13px] py-1.5 px-3">
                     No tags available.
                   </p>
                 ) : (
@@ -899,16 +678,7 @@ export default function QuestionBank() {
                           clearTagFilters();
                           setShowTagDropdown(false);
                         }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--horizon-red)',
-                          fontSize: 13,
-                          cursor: 'pointer',
-                          padding: '4px 12px',
-                          marginBottom: 4,
-                          fontFamily: 'var(--font-primary)',
-                        }}
+                        className="bg-transparent border-none text-horizon-red text-[13px] cursor-pointer py-1 px-3 mb-1 font-primary"
                       >
                         Clear all
                       </button>
@@ -916,29 +686,16 @@ export default function QuestionBank() {
                     {allTags.map((tag) => (
                       <label
                         key={tag.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          padding: '7px 12px',
-                          cursor: 'pointer',
-                          fontSize: 14,
-                          color: 'var(--graphite)',
-                          borderRadius: 6,
-                        }}
+                        className="flex items-center gap-2 py-[7px] px-3 cursor-pointer text-sm text-graphite rounded"
                       >
                         <input
                           type="checkbox"
                           checked={filterTagIds.includes(tag.id)}
                           onChange={() => toggleTagFilter(tag.id)}
-                          style={{
-                            accentColor: 'var(--horizon-red)',
-                            width: 15,
-                            height: 15,
-                            flexShrink: 0,
-                          }}
+                          className="shrink-0 w-[15px] h-[15px]"
+                          style={{ accentColor: 'var(--horizon-red)' }}
                         />
-                        <span style={{ flex: 1 }}>{tag.label}</span>
+                        <span className="flex-1">{tag.label}</span>
                       </label>
                     ))}
                   </>
@@ -949,28 +706,19 @@ export default function QuestionBank() {
         </div>
 
         {/* Show inactive toggle */}
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            cursor: 'pointer',
-            fontSize: 14,
-            color: 'var(--graphite)',
-            userSelect: 'none',
-          }}
-        >
+        <label className="flex items-center gap-2 cursor-pointer text-sm text-graphite select-none">
           <input
             type="checkbox"
             checked={includeInactive}
             onChange={handleIncludeInactiveToggle}
-            style={{ accentColor: 'var(--horizon-red)', width: 15, height: 15 }}
+            className="w-[15px] h-[15px]"
+            style={{ accentColor: 'var(--horizon-red)' }}
           />
           Show inactive
         </label>
 
         {/* Total count */}
-        <span style={{ marginLeft: 'auto', color: 'var(--grey)', fontSize: 14 }}>
+        <span className="ml-auto text-grey text-sm">
           {questionsLoading && questions.length === 0
             ? 'Loading…'
             : `${totalCount} question${totalCount !== 1 ? 's' : ''}`}
@@ -978,82 +726,35 @@ export default function QuestionBank() {
       </div>
 
       {/* ---- Main content ---- */}
-      <div style={{ padding: '24px 32px' }}>
+      <div className="page-content">
         {/* Page-level error */}
         {pageError && (
-          <div
-            role="alert"
-            style={{
-              backgroundColor: '#FEE2E2',
-              border: '1px solid #FCA5A5',
-              borderRadius: 8,
-              padding: '12px 16px',
-              marginBottom: 16,
-              color: '#B91C1C',
-              fontSize: 14,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
+          <div role="alert" className="alert-error mb-4 flex justify-between items-center">
             <span>{pageError}</span>
             <button
               onClick={() => setPageError(null)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#B91C1C',
-                cursor: 'pointer',
-                fontSize: 16,
-                lineHeight: 1,
-                padding: '0 4px',
-              }}
+              className="bg-transparent border-none text-inherit cursor-pointer text-base leading-none px-1"
               aria-label="Dismiss error"
             >
-              ×
+              &times;
             </button>
           </div>
         )}
 
         {/* Query error */}
         {questionsError && (
-          <div
-            role="alert"
-            style={{
-              backgroundColor: '#FEE2E2',
-              border: '1px solid #FCA5A5',
-              borderRadius: 8,
-              padding: '12px 16px',
-              marginBottom: 16,
-              color: '#B91C1C',
-              fontSize: 14,
-            }}
-          >
+          <div role="alert" className="alert-error mb-4">
             Failed to load questions: {questionsError.message}
           </div>
         )}
 
         {/* Empty / loading state */}
         {questionsLoading && questions.length === 0 ? (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '64px 0',
-              color: 'var(--grey)',
-              fontSize: 15,
-            }}
-          >
+          <div className="text-center py-16 text-grey text-[15px]">
             Loading questions…
           </div>
         ) : questions.length === 0 ? (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '64px 0',
-              color: 'var(--grey)',
-              fontSize: 15,
-            }}
-          >
+          <div className="text-center py-16 text-grey text-[15px]">
             No questions found.
             {!includeInactive && (
               <span> Enable &ldquo;Show inactive&rdquo; to include deactivated questions.</span>
@@ -1062,42 +763,22 @@ export default function QuestionBank() {
         ) : (
           <>
             {/* Table */}
-            <div
-              style={{
-                backgroundColor: 'var(--white)',
-                borderRadius: 12,
-                border: '1px solid var(--ivory-tint)',
-                overflow: 'hidden',
-              }}
-            >
+            <div className="bg-white rounded border border-ivory-tint overflow-hidden">
               {/* Table header */}
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '2fr 130px 160px 100px 72px',
-                  padding: '11px 18px',
-                  borderBottom: '1px solid var(--ivory-tint)',
-                  backgroundColor: 'var(--ivory)',
-                  gap: 12,
-                }}
-              >
+              <div className="grid grid-cols-[2fr_130px_160px_100px_72px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
                 {(['Question', 'Category', 'Tags', 'Status', 'Action'] as const).map((h) => {
                   const field = h === 'Question' ? 'text' : h === 'Category' ? 'category' : null;
                   const isSorted = field && sortField === field;
-                  const arrow = isSorted ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+                  const arrow = isSorted ? (sortDir === 'asc' ? ' \u25B2' : ' \u25BC') : '';
                   return (
                     <span
                       key={h}
                       onClick={field ? () => handleSort(field) : undefined}
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: isSorted ? 'var(--graphite)' : 'var(--grey)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.07em',
-                        cursor: field ? 'pointer' : 'default',
-                        userSelect: 'none',
-                      }}
+                      className={cn(
+                        'col-header',
+                        isSorted && 'text-arena-gold',
+                        field && 'cursor-pointer'
+                      )}
                     >
                       {h}{arrow}
                     </span>
@@ -1109,62 +790,34 @@ export default function QuestionBank() {
               {questions.map((q, i) => (
                 <div
                   key={q.id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '2fr 130px 160px 100px 72px',
-                    padding: '15px 18px',
-                    borderBottom:
-                      i < questions.length - 1 ? '1px solid var(--ivory-tint)' : 'none',
-                    alignItems: 'start',
-                    gap: 12,
-                    backgroundColor: q.isActive ? 'var(--white)' : 'rgba(236,234,222,0.35)',
-                    opacity: q.isActive ? 1 : 0.7,
-                    transition: 'background-color 0.15s',
-                  }}
+                  className={cn(
+                    'grid grid-cols-[2fr_130px_160px_100px_72px] py-[15px] px-[18px] items-start gap-3 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                    i < questions.length - 1 && 'border-b border-ivory-tint',
+                    !q.isActive ? 'bg-ivory-tint/35 opacity-70' : i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint'
+                  )}
                 >
                   {/* Question text */}
                   <div
-                    style={{
-                      fontSize: 14,
-                      color: 'var(--graphite)',
-                      lineHeight: 1.55,
-                      overflow: 'hidden',
-                      maxHeight: '4.65em',
-                    }}
+                    className="text-sm text-graphite leading-[1.55] overflow-hidden max-h-[4.65em]"
                     title={q.text}
                   >
                     {q.text}
                   </div>
 
                   {/* Category */}
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: 'var(--grey)',
-                      paddingTop: 1,
-                    }}
-                  >
+                  <div className="text-[13px] text-grey pt-px">
                     {q.category}
                   </div>
 
                   {/* Tags */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingTop: 1 }}>
+                  <div className="flex flex-wrap gap-1 pt-px">
                     {q.tags.length === 0 ? (
-                      <span style={{ color: 'var(--grey)', fontSize: 13 }}>—</span>
+                      <span className="text-grey text-[13px]">&mdash;</span>
                     ) : (
                       q.tags.map((tag) => (
                         <span
                           key={tag.id}
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 500,
-                            padding: '3px 9px',
-                            borderRadius: 999,
-                            border: '1px solid var(--ivory-tint)',
-                            backgroundColor: 'var(--ivory)',
-                            color: 'var(--grey)',
-                            whiteSpace: 'nowrap',
-                          }}
+                          className="badge bg-ivory-tint text-graphite"
                         >
                           {tag.label}
                         </span>
@@ -1178,20 +831,8 @@ export default function QuestionBank() {
                       onClick={() => handleActiveToggle(q)}
                       disabled={updating}
                       title={q.isActive ? 'Click to deactivate' : 'Click to reactivate'}
-                      style={{
-                        padding: '4px 12px',
-                        borderRadius: 999,
-                        border: 'none',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: updating ? 'not-allowed' : 'pointer',
-                        backgroundColor: q.isActive ? '#DCFCE7' : '#F3F4F6',
-                        color: q.isActive ? '#15803D' : '#6B7280',
-                        transition: 'all 0.15s',
-                        fontFamily: 'var(--font-primary)',
-                      }}
                     >
-                      {q.isActive ? 'Active' : 'Inactive'}
+                      <StatusBadge status={q.isActive ? 'active' : 'inactive'} />
                     </button>
                   </div>
 
@@ -1199,17 +840,7 @@ export default function QuestionBank() {
                   <div>
                     <button
                       onClick={() => openEdit(q)}
-                      style={{
-                        background: 'none',
-                        border: '1px solid var(--ivory-tint)',
-                        borderRadius: 6,
-                        padding: '5px 12px',
-                        fontSize: 13,
-                        color: 'var(--graphite)',
-                        cursor: 'pointer',
-                        fontFamily: 'var(--font-primary)',
-                        transition: 'border-color 0.12s',
-                      }}
+                      className="btn-ghost border border-ivory-tint rounded py-[5px] px-3 text-[13px] text-graphite font-primary hover:border-grey transition-colors"
                     >
                       Edit
                     </button>
@@ -1219,43 +850,32 @@ export default function QuestionBank() {
             </div>
 
             {/* Pagination */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginTop: 20,
-                flexWrap: 'wrap',
-                gap: 12,
-              }}
-            >
-              <span style={{ color: 'var(--grey)', fontSize: 14 }}>
+            <div className="flex items-center justify-between mt-5 flex-wrap gap-3">
+              <span className="text-grey text-sm">
                 {questions.length > 0
-                  ? `Showing ${pageStart}–${pageEnd} of ${totalCount}`
+                  ? `Showing ${pageStart}\u2013${pageEnd} of ${totalCount}`
                   : ''}
               </span>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className="flex gap-2">
                 <button
                   onClick={handlePrevPage}
                   disabled={currentPageIndex === 0}
-                  style={{
-                    ...secondaryBtnStyle,
-                    opacity: currentPageIndex === 0 ? 0.4 : 1,
-                    cursor: currentPageIndex === 0 ? 'not-allowed' : 'pointer',
-                  }}
+                  className={cn(
+                    'btn-amber',
+                    currentPageIndex === 0 && 'opacity-40 cursor-not-allowed'
+                  )}
                 >
-                  ← Previous
+                  &larr; Previous
                 </button>
                 <button
                   onClick={handleNextPage}
                   disabled={!pageInfo?.hasNextPage}
-                  style={{
-                    ...secondaryBtnStyle,
-                    opacity: !pageInfo?.hasNextPage ? 0.4 : 1,
-                    cursor: !pageInfo?.hasNextPage ? 'not-allowed' : 'pointer',
-                  }}
+                  className={cn(
+                    'btn-amber',
+                    !pageInfo?.hasNextPage && 'opacity-40 cursor-not-allowed'
+                  )}
                 >
-                  Next →
+                  Next &rarr;
                 </button>
               </div>
             </div>

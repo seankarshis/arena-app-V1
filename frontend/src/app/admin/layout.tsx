@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useApolloClient } from '@apollo/client';
 import { logout, getUser } from '@/lib/auth';
+import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
 // Nav items
@@ -45,91 +46,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside
-        style={{
-          width: 240,
-          minWidth: 240,
-          backgroundColor: 'var(--white)',
-          borderRight: '1px solid var(--ivory-tint)',
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          bottom: 0,
-          zIndex: 10,
-        }}
-      >
+      <aside className="w-60 min-w-[240px] bg-white border-r border-ivory-tint flex flex-col fixed top-0 left-0 bottom-0 z-10">
         {/* Wordmark */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--ivory-tint)' }}>
-          <span
-            style={{
-              display: 'block',
-              fontFamily: 'var(--font-logo)',
-              fontWeight: 100,
-              fontSize: 22,
-              letterSpacing: '-0.06em',
-              color: 'var(--logo-grey)',
-              textTransform: 'lowercase',
-              userSelect: 'none',
-            }}
-          >
+        <div className="py-5 px-6 border-b border-ivory-tint">
+          <span className="block font-primary font-thin text-[22px] tracking-[-0.06em] text-logo-grey lowercase select-none">
             elastichorizon
           </span>
-          <span
-            style={{
-              display: 'block',
-              marginTop: 6,
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 300,
-              fontSize: 10,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: 'var(--grey)',
-              userSelect: 'none',
-            }}
-          >
+          <span className="block mt-1.5 font-primary font-light text-[10px] tracking-wide uppercase text-grey select-none">
             Arena AI — Admin
           </span>
         </div>
 
         {/* Nav links */}
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '16px 12px 0', flex: 1 }}>
+        <nav className="flex flex-col gap-0.5 pt-4 px-3 flex-1">
           {NAV_ITEMS.map((item) => {
             const active = isActive(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                style={{
-                  display: 'block',
-                  padding: '10px 12px 10px 16px',
-                  borderRadius: 6,
-                  borderLeft: active ? '3px solid var(--horizon-red)' : '3px solid transparent',
-                  backgroundColor: active ? 'rgba(122, 14, 19, 0.06)' : 'transparent',
-                  color: active ? 'var(--horizon-red)' : 'var(--grey)',
-                  fontFamily: 'var(--font-primary)',
-                  fontWeight: 500,
-                  fontSize: 14,
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
-                  textDecoration: 'none',
-                  transition: 'color 0.15s, background-color 0.15s',
-                }}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.color = 'var(--graphite)';
-                    e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.02)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.color = 'var(--grey)';
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }
-                }}
+                className={cn(
+                  'block py-2.5 px-3 pl-4 rounded font-primary font-medium text-sm tracking-nav uppercase no-underline',
+                  'transition-[border-radius,color,background-color] duration-200',
+                  active
+                    ? 'border-l-2 border-l-horizon-red bg-horizon-red/[0.06] text-horizon-red'
+                    : 'border-l-2 border-l-transparent text-grey hover:text-graphite hover:bg-graphite/[0.02] hover:rounded-lg'
+                )}
               >
                 {item.label}
               </Link>
@@ -138,51 +82,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         {/* User info + Sign out */}
-        <div
-          style={{
-            padding: '16px 20px',
-            borderTop: '1px solid var(--ivory-tint)',
-          }}
-        >
+        <div className="py-4 px-5 border-t border-ivory-tint">
           {username && (
             <p
-              style={{
-                fontFamily: 'var(--font-primary)',
-                fontSize: 12,
-                color: 'var(--grey)',
-                marginBottom: 8,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
+              className="text-xs text-grey mb-2 overflow-hidden text-ellipsis whitespace-nowrap"
               title={username}
             >
               {username}
             </p>
           )}
-          <button
-            onClick={handleSignOut}
-            style={{
-              background: 'none',
-              border: 'none',
-              fontFamily: 'var(--font-primary)',
-              fontSize: 13,
-              fontWeight: 500,
-              color: 'var(--grey)',
-              cursor: 'pointer',
-              padding: 0,
-              transition: 'color 0.15s',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--horizon-red)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--grey)'; }}
-          >
+          <button onClick={handleSignOut} className="btn-ghost text-[13px] font-medium p-0">
             Sign out
           </button>
         </div>
       </aside>
 
       {/* Main content */}
-      <div style={{ flex: 1, marginLeft: 240, minHeight: '100vh', backgroundColor: 'var(--ivory)' }}>
+      <div className="flex-1 ml-60 min-h-screen bg-ivory">
         <main>{children}</main>
       </div>
     </div>

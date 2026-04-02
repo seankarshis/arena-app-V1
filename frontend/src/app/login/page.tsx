@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, gql } from '@apollo/client';
 import { login, isAdmin, setBypassUser } from '@/lib/auth';
+import { cn } from '@/lib/utils';
 
 const isBypass = process.env.NEXT_PUBLIC_COGNITO_BYPASS === 'true';
 
@@ -35,55 +36,14 @@ function BypassUserPicker() {
   }
 
   return (
-    <div
-      style={{
-        width: '100%',
-        maxWidth: 400,
-        padding: 32,
-        backgroundColor: 'var(--white)',
-        borderRadius: 8,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-      }}
-    >
-      <h2
-        style={{
-          fontFamily: 'var(--font-primary)',
-          fontWeight: 600,
-          fontSize: 24,
-          marginBottom: 8,
-          color: 'var(--graphite)',
-        }}
-      >
-        Dev Login
-      </h2>
-      <p
-        style={{
-          fontFamily: 'var(--font-primary)',
-          color: 'var(--grey)',
-          fontSize: 14,
-          marginBottom: 24,
-        }}
-      >
-        Select a user to sign in as
-      </p>
+    <div className="card w-full max-w-[400px] p-8">
+      <h2 className="font-semibold text-2xl mb-2 text-graphite">Dev Login</h2>
+      <p className="text-grey text-sm mb-6">Select a user to sign in as</p>
 
-      {loading && (
-        <p style={{ fontFamily: 'var(--font-primary)', color: 'var(--grey)', fontSize: 14 }}>
-          Loading users&hellip;
-        </p>
-      )}
+      {loading && <p className="text-grey text-sm">Loading users&hellip;</p>}
 
       {error && (
-        <div
-          role="alert"
-          style={{
-            padding: '8px 12px',
-            borderRadius: 4,
-            backgroundColor: '#FEE2E2',
-            color: 'var(--horizon-red)',
-            fontSize: 14,
-          }}
-        >
+        <div role="alert" className="alert-error">
           {error.message}
         </div>
       )}
@@ -92,52 +52,20 @@ function BypassUserPicker() {
         <button
           key={user.id}
           onClick={() => handlePick(user)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            width: '100%',
-            padding: '12px 16px',
-            marginBottom: 12,
-            borderRadius: 6,
-            border: '1px solid var(--grey)',
-            backgroundColor: 'var(--ivory-tint)',
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
+          className="flex items-center justify-between w-full p-3 px-4 mb-3
+                     rounded border border-grey bg-ivory-tint cursor-pointer text-left
+                     transition-[border-radius,border-color] duration-200
+                     hover:rounded-lg hover:border-graphite active:scale-[0.98]"
         >
           <div>
-            <div
-              style={{
-                fontFamily: 'var(--font-primary)',
-                fontWeight: 600,
-                fontSize: 15,
-                color: 'var(--graphite)',
-              }}
-            >
-              {user.name}
-            </div>
-            <div
-              style={{
-                fontFamily: 'var(--font-primary)',
-                fontSize: 13,
-                color: 'var(--grey)',
-              }}
-            >
-              {user.email}
-            </div>
+            <div className="font-semibold text-[15px] text-graphite">{user.name}</div>
+            <div className="text-[13px] text-grey">{user.email}</div>
           </div>
           <span
-            style={{
-              padding: '2px 10px',
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 600,
-              fontFamily: 'var(--font-primary)',
-              backgroundColor: user.role === 'admin' ? 'var(--horizon-red)' : 'var(--graphite)',
-              color: 'var(--white)',
-              textTransform: 'capitalize',
-            }}
+            className={cn(
+              'badge',
+              user.role === 'admin' ? 'bg-horizon-red text-white' : 'bg-graphite text-white'
+            )}
           >
             {user.role}
           </span>
@@ -171,13 +99,11 @@ export default function LoginPage() {
       if (
         result.nextStep?.signInStep === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED'
       ) {
-        // TODO: implement new-password challenge flow
         setError('You must set a new password. This flow is not yet implemented.');
         setLoading(false);
         return;
       }
 
-      // Route based on group membership
       const admin = await isAdmin();
       router.push(admin ? '/admin' : '/');
     } catch (err: unknown) {
@@ -190,77 +116,21 @@ export default function LoginPage() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'var(--ivory)',
-      }}
-    >
+    <div className="min-h-screen flex items-center justify-center bg-ivory">
       {isBypass ? (
         <BypassUserPicker />
       ) : (
-        <form
-          onSubmit={handleSubmit}
-          style={{
-            width: '100%',
-            maxWidth: 400,
-            padding: 32,
-            backgroundColor: 'var(--white)',
-            borderRadius: 8,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-          }}
-        >
-          <h2
-            style={{
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 24,
-              marginBottom: 8,
-              color: 'var(--graphite)',
-            }}
-          >
-            Sign in
-          </h2>
-          <p
-            style={{
-              fontFamily: 'var(--font-primary)',
-              color: 'var(--grey)',
-              fontSize: 14,
-              marginBottom: 24,
-            }}
-          >
-            elastichorizon Arena
-          </p>
+        <form onSubmit={handleSubmit} className="card w-full max-w-[400px] p-8">
+          <h2 className="font-semibold text-2xl mb-2 text-graphite">Sign in</h2>
+          <p className="text-grey text-sm mb-6">elastichorizon Arena</p>
 
           {error && (
-            <div
-              role="alert"
-              style={{
-                padding: '8px 12px',
-                marginBottom: 16,
-                borderRadius: 4,
-                backgroundColor: '#FEE2E2',
-                color: 'var(--horizon-red)',
-                fontSize: 14,
-              }}
-            >
+            <div role="alert" className="alert-error mb-4">
               {error}
             </div>
           )}
 
-          <label
-            htmlFor="email"
-            style={{
-              display: 'block',
-              fontSize: 14,
-              fontWeight: 500,
-              marginBottom: 4,
-              color: 'var(--graphite)',
-            }}
-          >
+          <label htmlFor="email" className="block text-sm font-medium mb-1 text-graphite">
             Email
           </label>
           <input
@@ -269,28 +139,10 @@ export default function LoginPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              marginBottom: 16,
-              borderRadius: 4,
-              border: '1px solid var(--grey)',
-              backgroundColor: 'var(--ivory-tint)',
-              fontFamily: 'var(--font-primary)',
-              fontSize: 16,
-            }}
+            className="input-field mb-4"
           />
 
-          <label
-            htmlFor="password"
-            style={{
-              display: 'block',
-              fontSize: 14,
-              fontWeight: 500,
-              marginBottom: 4,
-              color: 'var(--graphite)',
-            }}
-          >
+          <label htmlFor="password" className="block text-sm font-medium mb-1 text-graphite">
             Password
           </label>
           <input
@@ -299,35 +151,13 @@ export default function LoginPage() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              marginBottom: 24,
-              borderRadius: 4,
-              border: '1px solid var(--grey)',
-              backgroundColor: 'var(--ivory-tint)',
-              fontFamily: 'var(--font-primary)',
-              fontSize: 16,
-            }}
+            className="input-field mb-6"
           />
 
           <button
             type="submit"
             disabled={loading}
-            style={{
-              width: '100%',
-              padding: '10px 0',
-              borderRadius: 999,
-              border: 'none',
-              backgroundColor: 'var(--horizon-red)',
-              color: 'var(--white)',
-              fontFamily: 'var(--font-primary)',
-              fontWeight: 600,
-              fontSize: 16,
-              letterSpacing: '0.03em',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.7 : 1,
-            }}
+            className="btn-primary w-full py-2.5 text-base tracking-[0.03em]"
           >
             {loading ? 'Signing in\u2026' : 'Sign in'}
           </button>

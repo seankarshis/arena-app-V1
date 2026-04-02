@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useApolloClient, gql } from '@apollo/client';
 import { getUser, logout } from '@/lib/auth';
+import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
 // GraphQL
@@ -82,17 +83,8 @@ export default function HomePage() {
   // ---- Loading ----
   if (loading) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'var(--ivory)',
-          fontFamily: 'var(--font-primary)',
-        }}
-      >
-        <p style={{ color: 'var(--grey)' }}>Loading your interviews…</p>
+      <div className="min-h-screen flex items-center justify-center bg-ivory">
+        <p className="text-grey">Loading your interviews…</p>
       </div>
     );
   }
@@ -100,17 +92,8 @@ export default function HomePage() {
   // ---- Error ----
   if (error) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'var(--ivory)',
-          fontFamily: 'var(--font-primary)',
-        }}
-      >
-        <p style={{ color: 'var(--horizon-red)' }}>
+      <div className="min-h-screen flex items-center justify-center bg-ivory">
+        <p className="text-horizon-red">
           Failed to load interviews. Please try refreshing.
         </p>
       </div>
@@ -120,87 +103,32 @@ export default function HomePage() {
   const templates = data?.getMyAssignedTemplates ?? [];
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        backgroundColor: 'var(--ivory)',
-        fontFamily: 'var(--font-primary)',
-        padding: '40px 24px',
-      }}
-    >
+    <div className="min-h-screen bg-ivory px-6 py-10">
       {/* Header */}
-      <header
-        style={{
-          maxWidth: 800,
-          margin: '0 auto',
-          marginBottom: 48,
-          display: 'flex',
-          alignItems: 'baseline',
-          gap: 12,
-        }}
-      >
-        <h1
-          style={{
-            fontFamily: 'var(--font-hero)',
-            fontSize: 28,
-            color: 'var(--graphite)',
-          }}
-        >
-          ARENA AI
-        </h1>
-        <span style={{ color: 'var(--grey)', fontSize: 14 }}>
-          elastichorizon
-        </span>
-        <span style={{ flex: 1 }} />
+      <header className="max-w-[800px] mx-auto mb-12 flex items-baseline gap-3">
+        <h1 className="font-hero text-[28px] text-graphite">ARENA AI</h1>
+        <span className="text-grey text-sm">elastichorizon</span>
+        <span className="flex-1" />
         <button
           onClick={handleSignOut}
-          style={{
-            background: 'none',
-            border: 'none',
-            fontFamily: 'var(--font-primary)',
-            fontSize: 14,
-            fontWeight: 500,
-            color: 'var(--grey)',
-            cursor: 'pointer',
-            padding: '4px 8px',
-            borderRadius: 4,
-            transition: 'color 0.15s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--horizon-red)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--grey)'; }}
+          className="btn-ghost text-sm font-medium"
         >
           Sign out
         </button>
       </header>
 
       {/* Main */}
-      <main style={{ maxWidth: 800, margin: '0 auto' }}>
-        <h2
-          style={{
-            fontSize: 20,
-            fontWeight: 600,
-            color: 'var(--graphite)',
-            marginBottom: 24,
-          }}
-        >
+      <main className="max-w-[800px] mx-auto">
+        <h2 className="text-xl font-semibold text-graphite mb-6">
           Your Interviews
         </h2>
 
         {templates.length === 0 ? (
-          <div
-            style={{
-              padding: 32,
-              backgroundColor: 'var(--white)',
-              borderRadius: 8,
-              textAlign: 'center',
-              color: 'var(--grey)',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-            }}
-          >
+          <div className="card p-8 text-center text-grey">
             No interviews have been assigned to you yet.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="flex flex-col gap-4">
             {templates.map(({ assignment, interviewStatus }) => {
               const isCompleted =
                 assignment.completedAt !== null ||
@@ -213,57 +141,28 @@ export default function HomePage() {
               return (
                 <div
                   key={assignment.id}
-                  style={{
-                    padding: 24,
-                    backgroundColor: 'var(--white)',
-                    borderRadius: 8,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: 16,
-                  }}
+                  className={cn(
+                    'card-interactive flex justify-between items-center gap-4',
+                    isCompleted && 'opacity-80'
+                  )}
                 >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h3
-                      style={{
-                        fontSize: 18,
-                        fontWeight: 500,
-                        color: 'var(--graphite)',
-                        marginBottom: 4,
-                      }}
-                    >
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-medium text-graphite mb-1">
                       {assignment.template.name}
                     </h3>
                     {assignment.template.description && (
-                      <p style={{ color: 'var(--grey)', fontSize: 14 }}>
+                      <p className="text-grey text-sm">
                         {assignment.template.description}
                       </p>
                     )}
                     {isCompleted && assignment.completedAt && (
-                      <p
-                        style={{
-                          color: 'var(--grey)',
-                          fontSize: 12,
-                          marginTop: 4,
-                        }}
-                      >
+                      <p className="text-grey text-xs mt-1">
                         Completed{' '}
                         {new Date(assignment.completedAt).toLocaleDateString()}
                       </p>
                     )}
                     {isCompleted && (
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          marginTop: 6,
-                          padding: '2px 10px',
-                          borderRadius: 999,
-                          backgroundColor: 'var(--ivory-tint)',
-                          color: 'var(--grey)',
-                          fontSize: 12,
-                        }}
-                      >
+                      <span className="badge-completed inline-block mt-1.5">
                         Completed
                       </span>
                     )}
@@ -277,19 +176,7 @@ export default function HomePage() {
                           assignment.template.name
                         )
                       }
-                      style={{
-                        flexShrink: 0,
-                        padding: '10px 24px',
-                        borderRadius: 999,
-                        border: 'none',
-                        backgroundColor: 'var(--horizon-red)',
-                        color: 'var(--white)',
-                        fontFamily: 'var(--font-primary)',
-                        fontWeight: 600,
-                        fontSize: 14,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
+                      className="btn-primary shrink-0 whitespace-nowrap"
                     >
                       {buttonLabel}
                     </button>
@@ -301,15 +188,7 @@ export default function HomePage() {
         )}
       </main>
 
-      <footer
-        style={{
-          maxWidth: 800,
-          margin: '48px auto 0',
-          textAlign: 'center',
-          color: 'var(--grey)',
-          fontSize: 12,
-        }}
-      >
+      <footer className="max-w-[800px] mx-auto mt-12 text-center text-grey text-xs">
         &copy; {new Date().getFullYear()} elastichorizon
       </footer>
     </div>
