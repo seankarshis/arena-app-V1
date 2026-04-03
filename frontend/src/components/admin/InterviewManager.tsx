@@ -195,7 +195,7 @@ export default function InterviewManager() {
               {/* Table header */}
               <div className="grid grid-cols-[1fr_1fr_110px_140px_140px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
                 {['Candidate', 'Template', 'Status', 'Started', 'Completed'].map((h) => (
-                  <span key={h} className="col-header">{h}</span>
+                  <span key={h} className={cn('col-header', h === 'Status' && 'text-center')}>{h}</span>
                 ))}
               </div>
 
@@ -221,7 +221,9 @@ export default function InterviewManager() {
 
                       <span className="text-sm text-graphite">{interview.template.name}</span>
 
-                      <StatusBadge status={interview.status} />
+                      <div className="flex justify-center">
+                        <StatusBadge status={interview.status} />
+                      </div>
 
                       <span className="text-[13px] text-grey">{formatDate(interview.startedAt)}</span>
 

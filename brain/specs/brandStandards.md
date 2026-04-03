@@ -144,6 +144,13 @@ Tables are the primary data presentation pattern in the admin UI. All tables fol
 
 Visual stack (back to front): ivory page → white table card with border → dark graphite header → white/ivory-tint alternating rows.
 
+#### Table interaction patterns
+
+- **Clickable rows:** Rows are the primary click target for edit/detail actions. No separate "Edit" button column. Add `cursor-pointer` and `onClick` to each row.
+- **Secondary actions stay inline:** If a row needs a destructive or toggle action (e.g. Deactivate/Activate), keep it as an inline button with `e.stopPropagation()` so row clicks don't trigger it.
+- **Center-aligned short columns:** Columns with short content (status badges, counts, single buttons) use `text-center` on the header and `flex justify-center` on cell content.
+- **No "Action" columns:** Do not add dedicated Action/Edit columns. The row click replaces them.
+
 ### Navigation (admin sidebar)
 
 - Fixed left sidebar, `bg-white`, `border-r border-ivory-tint`

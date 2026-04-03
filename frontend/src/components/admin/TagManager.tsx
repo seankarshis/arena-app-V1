@@ -231,9 +231,9 @@ export default function TagManager() {
         ) : (
           <div className="bg-white rounded border border-ivory-tint overflow-hidden">
             {/* Table header */}
-            <div className="grid grid-cols-[1fr_100px_140px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
-              {['Label', 'Status', 'Actions'].map((h) => (
-                <span key={h} className="col-header">{h}</span>
+            <div className="grid grid-cols-[1fr_100px_110px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
+              {['Label', 'Status', ''].map((h) => (
+                <span key={h} className={cn('col-header', h !== 'Label' && 'text-center')}>{h}</span>
               ))}
             </div>
 
@@ -241,25 +241,22 @@ export default function TagManager() {
             {filteredTags.map((tag, i) => (
               <div
                 key={tag.id}
+                onClick={() => openEdit(tag)}
                 className={cn(
-                  'grid grid-cols-[1fr_100px_140px] py-3.5 px-[18px] items-center gap-3 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                  'grid grid-cols-[1fr_100px_110px] py-3.5 px-[18px] items-center gap-3 cursor-pointer transition-colors duration-100 hover:bg-horizon-red/[0.03]',
                   i < filteredTags.length - 1 && 'border-b border-ivory-tint',
                   i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint'
                 )}
               >
                 <span className="text-sm font-medium text-graphite">{tag.label}</span>
 
-                <StatusBadge status={tag.isActive ? 'active' : 'inactive'} />
+                <div className="flex justify-center">
+                  <StatusBadge status={tag.isActive ? 'active' : 'inactive'} />
+                </div>
 
-                <div className="flex gap-2">
+                <div className="flex justify-center">
                   <button
-                    onClick={() => openEdit(tag)}
-                    className="btn-secondary py-1 px-3 text-[13px]"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => void handleToggleActive(tag)}
+                    onClick={(e) => { e.stopPropagation(); void handleToggleActive(tag); }}
                     className={cn(
                       'py-1 px-3 text-[13px]',
                       tag.isActive ? 'btn-wine' : 'btn-secondary'

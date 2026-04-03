@@ -203,17 +203,18 @@ export default function TemplatesPage() {
         ) : (
           <div className="bg-white rounded border border-ivory-tint overflow-hidden">
             {/* Table header */}
-            <div className="grid grid-cols-[1fr_120px_100px_80px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
-              {['Template', 'Status', 'Questions', 'Action'].map((h) => (
-                <span key={h} className="col-header">{h}</span>
+            <div className="grid grid-cols-[1fr_120px_100px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
+              {['Template', 'Status', 'Questions'].map((h) => (
+                <span key={h} className={cn('col-header', h !== 'Template' && 'text-center')}>{h}</span>
               ))}
             </div>
 
             {templates.map((tpl, i) => (
               <div
                 key={tpl.id}
+                onClick={() => router.push(`/admin/templates/${tpl.id}`)}
                 className={cn(
-                  'grid grid-cols-[1fr_120px_100px_80px] py-4 px-[18px] items-center gap-3 border-b border-ivory-tint last:border-b-0 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                  'grid grid-cols-[1fr_120px_100px] py-4 px-[18px] items-center gap-3 cursor-pointer border-b border-ivory-tint last:border-b-0 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
                   i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint'
                 )}
               >
@@ -229,18 +230,13 @@ export default function TemplatesPage() {
                   )}
                 </div>
 
-                <StatusBadge status={tpl.status} />
+                <div className="flex justify-center">
+                  <StatusBadge status={tpl.status} />
+                </div>
 
-                <span className="text-sm text-graphite font-mono">
+                <span className="text-sm text-graphite font-mono text-center">
                   {tpl.questions.length}
                 </span>
-
-                <button
-                  onClick={() => router.push(`/admin/templates/${tpl.id}`)}
-                  className="btn-secondary py-1 px-3 text-[13px]"
-                >
-                  Edit
-                </button>
               </div>
             ))}
           </div>

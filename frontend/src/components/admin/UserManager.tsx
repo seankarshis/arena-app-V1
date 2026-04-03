@@ -182,7 +182,7 @@ export default function UserManager() {
             {/* Table header */}
             <div className="grid grid-cols-[1fr_1fr_80px_120px_100px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
               {['Name', 'Email', 'Role', 'Templates', 'Consent'].map((h) => (
-                <span key={h} className="col-header">
+                <span key={h} className={cn('col-header', (h === 'Role' || h === 'Templates' || h === 'Consent') && 'text-center')}>
                   {h}
                 </span>
               ))}
@@ -210,24 +210,28 @@ export default function UserManager() {
 
                     <span className="text-sm text-grey">{user.email}</span>
 
-                    <span
-                      className={cn(
-                        'badge',
-                        user.role === 'admin'
-                          ? 'bg-horizon-red text-white'
-                          : 'bg-graphite text-white',
-                      )}
-                    >
-                      {user.role}
-                    </span>
+                    <div className="flex justify-center">
+                      <span
+                        className={cn(
+                          'badge',
+                          user.role === 'admin'
+                            ? 'bg-horizon-red text-white'
+                            : 'bg-graphite text-white',
+                        )}
+                      >
+                        {user.role}
+                      </span>
+                    </div>
 
-                    <span className="text-sm text-graphite font-mono">
+                    <span className="text-sm text-graphite font-mono text-center">
                       {activeAssignments.length}
                     </span>
 
-                    <StatusBadge
-                      status={user.consentStatus.allGranted ? 'granted' : 'denied'}
-                    />
+                    <div className="flex justify-center">
+                      <StatusBadge
+                        status={user.consentStatus.allGranted ? 'granted' : 'denied'}
+                      />
+                    </div>
                   </div>
 
                   {/* Expanded detail */}

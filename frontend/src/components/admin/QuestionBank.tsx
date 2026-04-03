@@ -765,9 +765,10 @@ export default function QuestionBank() {
             {/* Table */}
             <div className="bg-white rounded border border-ivory-tint overflow-hidden">
               {/* Table header */}
-              <div className="grid grid-cols-[2fr_130px_160px_100px_72px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
-                {(['Question', 'Category', 'Tags', 'Status', 'Action'] as const).map((h) => {
+              <div className="grid grid-cols-[2fr_130px_160px_100px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
+                {(['Question', 'Category', 'Tags', 'Status'] as const).map((h) => {
                   const field = h === 'Question' ? 'text' : h === 'Category' ? 'category' : null;
+                  const centered = h === 'Status';
                   const isSorted = field && sortField === field;
                   const arrow = isSorted ? (sortDir === 'asc' ? ' \u25B2' : ' \u25BC') : '';
                   return (
@@ -777,7 +778,8 @@ export default function QuestionBank() {
                       className={cn(
                         'col-header',
                         isSorted && 'text-arena-gold',
-                        field && 'cursor-pointer'
+                        field && 'cursor-pointer',
+                        centered && 'text-center'
                       )}
                     >
                       {h}{arrow}
@@ -790,8 +792,9 @@ export default function QuestionBank() {
               {questions.map((q, i) => (
                 <div
                   key={q.id}
+                  onClick={() => openEdit(q)}
                   className={cn(
-                    'grid grid-cols-[2fr_130px_160px_100px_72px] py-[15px] px-[18px] items-start gap-3 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                    'grid grid-cols-[2fr_130px_160px_100px] py-[15px] px-[18px] items-start gap-3 cursor-pointer transition-colors duration-100 hover:bg-horizon-red/[0.03]',
                     i < questions.length - 1 && 'border-b border-ivory-tint',
                     !q.isActive ? 'bg-ivory-tint/35 opacity-70' : i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint'
                   )}
@@ -826,23 +829,13 @@ export default function QuestionBank() {
                   </div>
 
                   {/* Active status toggle */}
-                  <div>
+                  <div className="flex justify-center">
                     <button
-                      onClick={() => handleActiveToggle(q)}
+                      onClick={(e) => { e.stopPropagation(); handleActiveToggle(q); }}
                       disabled={updating}
                       title={q.isActive ? 'Click to deactivate' : 'Click to reactivate'}
                     >
                       <StatusBadge status={q.isActive ? 'active' : 'inactive'} />
-                    </button>
-                  </div>
-
-                  {/* Edit button */}
-                  <div>
-                    <button
-                      onClick={() => openEdit(q)}
-                      className="btn-ghost border border-ivory-tint rounded py-[5px] px-3 text-[13px] text-graphite font-primary hover:border-grey transition-colors"
-                    >
-                      Edit
                     </button>
                   </div>
                 </div>
