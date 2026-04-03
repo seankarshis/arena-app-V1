@@ -7,7 +7,9 @@ import { usePTT } from './usePTT';
 import { audioUploadQueue } from '@/lib/audioUploadQueue';
 import { getIdToken } from '@/lib/auth';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
 
 // ---------------------------------------------------------------------------
 // State machine states

@@ -36,7 +36,10 @@ export interface PTTHook {
 // ---------------------------------------------------------------------------
 
 const STT_WS_BASE =
-  process.env.NEXT_PUBLIC_STT_WS_URL ?? 'ws://localhost:3001/stt';
+  process.env.NEXT_PUBLIC_STT_WS_URL ??
+  (typeof window !== 'undefined'
+    ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/stt`
+    : 'ws://localhost:3001/stt');
 const MAX_RECORDING_MS = 5 * 60 * 1000; // 5 minutes
 const WARNING_MS = 4 * 60 * 1000;        // 4 minutes
 

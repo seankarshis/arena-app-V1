@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useApolloClient, gql } from '@apollo/client';
 import { getUser, logout } from '@/lib/auth';
@@ -57,15 +57,21 @@ interface GetMyAssignedTemplatesData {
 export default function HomePage() {
   const router = useRouter();
   const client = useApolloClient();
+  const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
     void getUser().then((user) => {
-      if (!user) router.push('/login');
+      if (!user) {
+        router.push('/login');
+      } else {
+        setAuthed(true);
+      }
     });
   }, [router]);
 
   const { data, loading, error } = useQuery<GetMyAssignedTemplatesData>(
-    GET_MY_ASSIGNED_TEMPLATES
+    GET_MY_ASSIGNED_TEMPLATES,
+    { skip: !authed }
   );
 
   async function handleSignOut() {
