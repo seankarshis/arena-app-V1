@@ -170,7 +170,7 @@ pre {
 
   /* ----- Status badges (brand-only palette) ----- */
   .badge {
-    @apply inline-block px-2.5 py-0.5 rounded text-xs font-semibold capitalize;
+    @apply inline-block px-2.5 py-0.5 rounded text-xs font-semibold capitalize border border-graphite/20;
   }
 
   .badge-active {
