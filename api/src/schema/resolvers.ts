@@ -545,11 +545,19 @@ export const resolvers = {
       ctx: ArenaContext,
     ) {
       requireAdmin(ctx);
+
+      // Find the current max sequence_order to avoid unique constraint conflicts
+      const maxResult = await ctx.prisma.templateQuestion.aggregate({
+        where: { templateId: args.templateId },
+        _max: { sequenceOrder: true },
+      });
+      const nextOrder = (maxResult._max.sequenceOrder ?? 0) + 1;
+
       return ctx.prisma.templateQuestion.create({
         data: {
           templateId: args.templateId,
           questionId: args.questionId,
-          sequenceOrder: args.sequenceOrder,
+          sequenceOrder: nextOrder,
           categoryBucket: args.categoryBucket,
           isRequired: args.isRequired ?? true,
           followupTriggers: (args.followupTriggers ?? []) as string,

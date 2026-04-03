@@ -234,7 +234,6 @@ function sortedByOrder(qs: TemplateQuestion[]): TemplateQuestion[] {
 const STEPS = [
   'Template Info',
   'Select Questions',
-  'Category Buckets',
   'Follow-up Triggers',
   'Required / Optional',
   'Preview',
@@ -316,23 +315,19 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   const [bankAfterCursor, setBankAfterCursor] = useState<string | null>(null);
   const bankSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Step 3: bucket edits
-  const [bucketEdits, setBucketEdits] = useState<Record<string, string>>({});
-  const [creatingBucketFor, setCreatingBucketFor] = useState<string | null>(null);
-  const [newBucketValue, setNewBucketValue] = useState('');
-
-  // Step 4: trigger editor
+  // Step 3: trigger editor
   const [openTriggerFor, setOpenTriggerFor] = useState<string | null>(null);
   const [savingTriggersFor, setSavingTriggersFor] = useState<string | null>(null);
   const [triggerBankDebouncedSearch, setTriggerBankDebouncedSearch] = useState('');
   const triggerBankSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [addingExternalQuestion, setAddingExternalQuestion] = useState(false);
 
-  // Step 5: toggling required
+  // Step 4: toggling required
   const [togglingRequired, setTogglingRequired] = useState<string | null>(null);
 
-  // Step 6: collapsed buckets
+  // Step 5: preview
   const [collapsedBuckets, setCollapsedBuckets] = useState<Set<string>>(new Set());
+  const [previewMode, setPreviewMode] = useState<'category' | 'order'>('category');
 
   // General / publish
   const [pageError, setPageError] = useState<string | null>(null);
@@ -365,11 +360,11 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     fetchPolicy: 'cache-and-network',
   });
 
-  // Step 4: question bank search for trigger targets
+  // Step 3: question bank search for trigger targets
   const { data: triggerBankData, loading: triggerBankLoading } = useQuery<{
     getQuestions: QuestionConnection;
   }>(GET_ACTIVE_QUESTIONS, {
-    skip: currentStep !== 4 || !triggerBankDebouncedSearch,
+    skip: currentStep !== 3 || !triggerBankDebouncedSearch,
     variables: {
       first: 10,
       filters: { searchText: triggerBankDebouncedSearch },
@@ -405,9 +400,6 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
       }))
     );
     setLocalQuestions(sorted);
-    const edits: Record<string, string> = {};
-    for (const q of sorted) edits[q.id] = q.categoryBucket;
-    setBucketEdits(edits);
   }, [templateData]);
 
   // ---------------------------------------------------------------------------
@@ -533,51 +525,6 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   // Step 3 handlers
   // ---------------------------------------------------------------------------
 
-  const handleBucketSelect = async (tqId: string, val: string) => {
-    if (val === '__new__') {
-      setCreatingBucketFor(tqId);
-      setNewBucketValue('');
-      return;
-    }
-    setBucketEdits((prev) => ({ ...prev, [tqId]: val }));
-    const tq = localQuestions.find((q) => q.id === tqId);
-    if (!tq || tq.categoryBucket === val) return;
-    try {
-      await updateTQ({ variables: { id: tqId, categoryBucket: val } });
-      setLocalQuestions((prev) =>
-        prev.map((q) => (q.id === tqId ? { ...q, categoryBucket: val } : q))
-      );
-    } catch (err) {
-      setPageError((err as Error).message);
-      setBucketEdits((prev) => ({ ...prev, [tqId]: tq.categoryBucket }));
-    }
-  };
-
-  const handleNewBucketSave = async (tqId: string) => {
-    const val = newBucketValue.trim();
-    if (!val) {
-      setCreatingBucketFor(null);
-      return;
-    }
-    setCreatingBucketFor(null);
-    setBucketEdits((prev) => ({ ...prev, [tqId]: val }));
-    const tq = localQuestions.find((q) => q.id === tqId);
-    if (!tq || tq.categoryBucket === val) return;
-    try {
-      await updateTQ({ variables: { id: tqId, categoryBucket: val } });
-      setLocalQuestions((prev) =>
-        prev.map((q) => (q.id === tqId ? { ...q, categoryBucket: val } : q))
-      );
-    } catch (err) {
-      setPageError((err as Error).message);
-      setBucketEdits((prev) => ({ ...prev, [tqId]: tq.categoryBucket }));
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // Step 4 handlers
-  // ---------------------------------------------------------------------------
-
   const handleSaveTriggers = async (tqId: string, triggers: FollowupTrigger[]) => {
     setSavingTriggersFor(tqId);
     try {
@@ -683,7 +630,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   };
 
   // ---------------------------------------------------------------------------
-  // Step 5 handlers
+  // Step 4 handlers
   // ---------------------------------------------------------------------------
 
   const handleToggleRequired = async (tqId: string, current: boolean) => {
@@ -701,7 +648,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   };
 
   // ---------------------------------------------------------------------------
-  // Step 7 handlers
+  // Step 6 handlers
   // ---------------------------------------------------------------------------
 
   const handlePublish = async () => {
@@ -864,12 +811,19 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
                 return (
                   <div
                     key={q.id}
-                    onClick={() => !isAdded && void handleAddQuestion(q)}
+                    onClick={() => {
+                      if (isAdded) {
+                        const tq = localQuestions.find((t) => t.question.id === q.id);
+                        if (tq) void handleRemoveQuestion(tq.id);
+                      } else {
+                        void handleAddQuestion(q);
+                      }
+                    }}
                     className={cn(
                       'py-3 px-3.5 flex items-start gap-2.5 transition-colors duration-100',
                       i < bankQuestions.length - 1 && 'border-b border-ivory-tint',
                       isAdded
-                        ? 'cursor-default bg-ivory-tint/35'
+                        ? 'cursor-pointer bg-ivory-tint/35 hover:bg-red-50/40'
                         : cn(i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint', 'cursor-pointer hover:bg-horizon-red/[0.03]'),
                     )}
                   >
@@ -984,114 +938,6 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
       </div>
     </div>
   );
-
-  const renderStep3 = () => {
-    // Collect unique bucket names from all questions + edits
-    const uniqueBuckets = Array.from(
-      new Set(
-        localQuestions.map((tq) => bucketEdits[tq.id] ?? tq.categoryBucket).filter(Boolean)
-      )
-    ).sort();
-
-    return (
-      <div className="py-6">
-        <p className="text-grey text-sm mb-5">
-          Assign each question to a category bucket within this template. Select
-          an existing bucket or create a new one. Changes save immediately.
-        </p>
-
-        {localQuestions.length === 0 ? (
-          <p className="text-grey text-sm">
-            No questions selected. Go to Step 2 to add questions.
-          </p>
-        ) : (
-          <div className="bg-white rounded border border-ivory-tint overflow-hidden">
-            <div className="grid grid-cols-[36px_1fr_210px] py-2.5 px-4 bg-graphite border-b border-graphite/20 gap-3">
-              {['#', 'Question', 'Category Bucket'].map((h) => (
-                <span key={h} className="col-header">
-                  {h}
-                </span>
-              ))}
-            </div>
-
-            {localQuestions.map((tq, i) => {
-              const currentBucket = bucketEdits[tq.id] ?? tq.categoryBucket;
-              const isCreating = creatingBucketFor === tq.id;
-
-              return (
-                <div
-                  key={tq.id}
-                  className={cn(
-                    'grid grid-cols-[36px_1fr_210px] py-3.5 px-4 items-center gap-3 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
-                    i < localQuestions.length - 1 && 'border-b border-ivory-tint',
-                    i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint',
-                  )}
-                >
-                  <span className="text-xs text-grey font-mono">
-                    {i + 1}
-                  </span>
-                  <p className="text-[13px] text-graphite leading-[1.4]">
-                    {tq.question.text.length > 120
-                      ? tq.question.text.slice(0, 120) + '\u2026'
-                      : tq.question.text}
-                  </p>
-
-                  {isCreating ? (
-                    <div className="flex gap-1.5">
-                      <input
-                        type="text"
-                        value={newBucketValue}
-                        onChange={(e) => setNewBucketValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') void handleNewBucketSave(tq.id);
-                          if (e.key === 'Escape') setCreatingBucketFor(null);
-                        }}
-                        autoFocus
-                        placeholder="New bucket name"
-                        className="input-field text-[13px] py-1.5 flex-1 min-w-0"
-                      />
-                      <button
-                        onClick={() => void handleNewBucketSave(tq.id)}
-                        disabled={!newBucketValue.trim()}
-                        className={cn(
-                          'btn-primary py-1.5 px-2.5 text-2xs shrink-0',
-                          !newBucketValue.trim() && 'opacity-50 cursor-not-allowed',
-                        )}
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setCreatingBucketFor(null)}
-                        className="btn-ghost text-[13px] shrink-0"
-                      >
-                        {'\u00d7'}
-                      </button>
-                    </div>
-                  ) : (
-                    <select
-                      value={currentBucket}
-                      onChange={(e) => void handleBucketSelect(tq.id, e.target.value)}
-                      className="select-field text-[13px]"
-                    >
-                      {uniqueBuckets.map((b) => (
-                        <option key={b} value={b}>
-                          {b}
-                        </option>
-                      ))}
-                      {!uniqueBuckets.includes(currentBucket) && (
-                        <option value={currentBucket}>{currentBucket}</option>
-                      )}
-                      <option value="__new__">+ Create new...</option>
-                    </select>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   const renderStep4 = () => (
     <div className="py-6">
@@ -1281,17 +1127,118 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
       buckets[tq.categoryBucket].push(tq);
     }
 
+    const renderQuestionCard = (tq: TemplateQuestion) => {
+      const seqNum = localQuestions.findIndex((q) => q.id === tq.id) + 1;
+      return (
+        <div key={tq.id} className="py-3.5 px-[18px] border-t border-ivory-tint">
+          <div
+            className={cn(
+              'flex items-start gap-2.5',
+              tq.followupTriggers.length > 0 && 'mb-2.5',
+            )}
+          >
+            <span className="text-2xs text-grey font-mono min-w-[24px] mt-[3px] shrink-0">
+              #{seqNum}
+            </span>
+            <div className="flex-1">
+              <p className="text-sm text-graphite leading-normal mb-1.5">
+                {tq.question.text}
+              </p>
+              <span
+                className={cn(
+                  'py-[5px] px-3.5 rounded-md text-xs font-semibold',
+                  tq.isRequired
+                    ? 'bg-horizon-red/10 text-horizon-red'
+                    : 'bg-ivory-tint text-grey',
+                )}
+              >
+                {tq.isRequired ? 'Required' : 'Optional'}
+              </span>
+            </div>
+          </div>
+
+          {tq.followupTriggers.length > 0 && (
+            <div className="ml-[34px] flex flex-col gap-[5px]">
+              {tq.followupTriggers.map((trigger, ti) => {
+                const targetTexts = trigger.targetTemplateQuestionIds
+                  .map((id) => {
+                    const found = localQuestions.find((q) => q.id === id);
+                    if (!found) return null;
+                    return found.question.text;
+                  })
+                  .filter((s): s is string => s !== null);
+
+                return (
+                  <div
+                    key={ti}
+                    className="text-xs text-grey py-1.5 px-2.5 rounded-md bg-ivory border border-ivory-tint"
+                  >
+                    <strong className="capitalize text-graphite">
+                      {trigger.type}
+                    </strong>
+                    {trigger.type === 'keyword' &&
+                      trigger.keywords &&
+                      ` \u2014 "${trigger.keywords}"`}
+                    {trigger.type === 'sentiment' &&
+                      trigger.sentiment &&
+                      ` \u2014 ${trigger.sentiment}`}
+                    {trigger.type === 'length' &&
+                      trigger.lengthDescription &&
+                      ` \u2014 ${trigger.lengthDescription}`}
+                    {targetTexts.length > 0 && (
+                      <span className="block mt-[3px] text-grey text-2xs">
+                        {'\u2192'} {targetTexts.join(', ')}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    };
+
     return (
       <div className="py-6">
-        <p className="text-grey text-sm mb-5">
-          Review the full interview flow before publishing. Click a bucket header to
-          collapse or expand it.
-        </p>
+        <div className="flex items-center justify-between mb-5">
+          <p className="text-grey text-sm">
+            Review the full interview flow before publishing.
+          </p>
+          <div className="flex rounded-md border border-ivory-tint overflow-hidden">
+            <button
+              onClick={() => setPreviewMode('order')}
+              className={cn(
+                'py-1.5 px-3.5 text-xs font-semibold border-none cursor-pointer font-primary transition-colors',
+                previewMode === 'order'
+                  ? 'bg-graphite text-white'
+                  : 'bg-white text-graphite hover:bg-ivory-tint',
+              )}
+            >
+              By Order
+            </button>
+            <button
+              onClick={() => setPreviewMode('category')}
+              className={cn(
+                'py-1.5 px-3.5 text-xs font-semibold border-none cursor-pointer font-primary transition-colors border-l border-ivory-tint',
+                previewMode === 'category'
+                  ? 'bg-graphite text-white'
+                  : 'bg-white text-graphite hover:bg-ivory-tint',
+              )}
+            >
+              By Category
+            </button>
+          </div>
+        </div>
 
         {localQuestions.length === 0 ? (
           <p className="text-grey text-sm">
             No questions in this template yet.
           </p>
+        ) : previewMode === 'order' ? (
+          <div className="bg-white rounded-[10px] border border-ivory-tint overflow-hidden">
+            {localQuestions.map((tq) => renderQuestionCard(tq))}
+          </div>
         ) : (
           <div className="flex flex-col gap-3">
             {bucketOrder.map((bucket) => {
@@ -1328,86 +1275,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
                   </button>
 
                   {/* Bucket questions */}
-                  {!isCollapsed &&
-                    qs.map((tq) => {
-                      const seqNum = localQuestions.findIndex((q) => q.id === tq.id) + 1;
-                      return (
-                        <div
-                          key={tq.id}
-                          className="py-3.5 px-[18px] border-t border-ivory-tint"
-                        >
-                          <div
-                            className={cn(
-                              'flex items-start gap-2.5',
-                              tq.followupTriggers.length > 0 && 'mb-2.5',
-                            )}
-                          >
-                            <span className="text-2xs text-grey font-mono min-w-[24px] mt-[3px] shrink-0">
-                              #{seqNum}
-                            </span>
-                            <div className="flex-1">
-                              <p className="text-sm text-graphite leading-normal mb-1.5">
-                                {tq.question.text}
-                              </p>
-                              <span
-                                className={cn(
-                                  'text-2xs py-0.5 px-2 rounded-pill font-semibold',
-                                  tq.isRequired
-                                    ? 'bg-horizon-red/10 text-horizon-red'
-                                    : 'bg-ivory-tint text-grey',
-                                )}
-                              >
-                                {tq.isRequired ? 'Required' : 'Optional'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {tq.followupTriggers.length > 0 && (
-                            <div className="ml-[34px] flex flex-col gap-[5px]">
-                              {tq.followupTriggers.map((trigger, ti) => {
-                                const targetTexts = trigger.targetTemplateQuestionIds
-                                  .map((id) => {
-                                    const found = localQuestions.find(
-                                      (q) => q.id === id
-                                    );
-                                    if (!found) return null;
-                                    const txt = found.question.text;
-                                    return txt.length > 50
-                                      ? txt.slice(0, 50) + '\u2026'
-                                      : txt;
-                                  })
-                                  .filter((s): s is string => s !== null);
-
-                                return (
-                                  <div
-                                    key={ti}
-                                    className="text-xs text-grey py-1.5 px-2.5 rounded-md bg-ivory border border-ivory-tint"
-                                  >
-                                    <strong className="capitalize text-graphite">
-                                      {trigger.type}
-                                    </strong>
-                                    {trigger.type === 'keyword' &&
-                                      trigger.keywords &&
-                                      ` \u2014 "${trigger.keywords}"`}
-                                    {trigger.type === 'sentiment' &&
-                                      trigger.sentiment &&
-                                      ` \u2014 ${trigger.sentiment}`}
-                                    {trigger.type === 'length' &&
-                                      trigger.lengthDescription &&
-                                      ` \u2014 ${trigger.lengthDescription}`}
-                                    {targetTexts.length > 0 && (
-                                      <span className="block mt-[3px] text-grey text-2xs">
-                                        {'\u2192'} {targetTexts.join(', ')}
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                  {!isCollapsed && qs.map((tq) => renderQuestionCard(tq))}
                 </div>
               );
             })}
@@ -1577,11 +1445,10 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     switch (currentStep) {
       case 1: return renderStep1();
       case 2: return renderStep2();
-      case 3: return renderStep3();
-      case 4: return renderStep4();
-      case 5: return renderStep5();
-      case 6: return renderStep6();
-      case 7: return renderStep7();
+      case 3: return renderStep4();
+      case 4: return renderStep5();
+      case 5: return renderStep6();
+      case 6: return renderStep7();
       default: return null;
     }
   };
@@ -1645,11 +1512,11 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
             {'\u2190'} Back
           </button>
           <button
-            onClick={() => setCurrentStep((s) => Math.min(7, s + 1))}
-            disabled={currentStep === 7}
+            onClick={() => setCurrentStep((s) => Math.min(STEPS.length, s + 1))}
+            disabled={currentStep === STEPS.length}
             className={cn(
               'btn-primary',
-              currentStep === 7 && 'opacity-40 cursor-not-allowed',
+              currentStep === STEPS.length && 'opacity-40 cursor-not-allowed',
             )}
           >
             Next {'\u2192'}

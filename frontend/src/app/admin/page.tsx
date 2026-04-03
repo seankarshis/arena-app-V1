@@ -184,7 +184,7 @@ export default function AdminDashboard() {
                   {/* Table header */}
                   <div className="grid grid-cols-[1fr_1fr_100px_120px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
                     {['Candidate', 'Template', 'Status', 'Date'].map((h) => (
-                      <span key={h} className="col-header">{h}</span>
+                      <span key={h} className={cn('col-header', h === 'Status' && 'text-center')}>{h}</span>
                     ))}
                   </div>
 
@@ -202,7 +202,9 @@ export default function AdminDashboard() {
                       <span className="text-sm text-graphite">
                         {node.template.name}
                       </span>
-                      <StatusBadge status={node.status} />
+                      <div className="text-center">
+                        <StatusBadge status={node.status} />
+                      </div>
                       <span className="text-[13px] text-grey">
                         {formatDate(node.completedAt ?? node.startedAt)}
                       </span>
