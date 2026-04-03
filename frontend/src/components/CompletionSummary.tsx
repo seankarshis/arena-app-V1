@@ -31,7 +31,7 @@ function StatItem({ value, label }: { value: number | string; label: string }) {
 export default function CompletionSummary({ session, onGoHome }: Props) {
   const answered = session.transcript.filter((t) => !t.isSkipped).length;
   const skipped = session.transcript.filter((t) => t.isSkipped).length;
-  const total = session.transcript.length;
+  const total = session.totalQuestions || session.transcript.length;
   const completionPct = total > 0 ? Math.round((answered / total) * 100) : 0;
 
   return (

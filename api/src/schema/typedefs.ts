@@ -279,6 +279,7 @@ export const typeDefs = `#graphql
 
   type StartInterviewPayload {
     interviewId: ID!
+    totalQuestions: Int!
   }
 
   type SubmitResponsePayload {

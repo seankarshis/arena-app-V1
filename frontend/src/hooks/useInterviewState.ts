@@ -56,6 +56,8 @@ export interface InterviewSession {
   /** Completed question-answer pairs (shown in transcript area). */
   transcript: Turn[];
   progressPercent: number;
+  /** Total questions in the template (set at interview start). */
+  totalQuestions: number;
   /** Idle prompt text delivered by the backend during inactivity. */
   idlePrompt: string | null;
   errorMessage: string | null;
@@ -130,6 +132,7 @@ const START_INTERVIEW = gql`
   mutation StartInterview($templateId: ID!) {
     startInterview(templateId: $templateId) {
       interviewId
+      totalQuestions
     }
   }
 `;
@@ -215,7 +218,7 @@ const SAVE_DRAFT = gql`
 // ---------------------------------------------------------------------------
 
 interface StartInterviewResult {
-  startInterview: { interviewId: string };
+  startInterview: { interviewId: string; totalQuestions: number };
 }
 
 interface SubmitResponseResult {
@@ -279,6 +282,7 @@ export function useInterviewState(templateId: string): {
     streamingText: '',
     transcript: [],
     progressPercent: 0,
+    totalQuestions: 0,
     idlePrompt: null,
     errorMessage: null,
     startedAt: null,
@@ -727,10 +731,11 @@ export function useInterviewState(templateId: string): {
       console.log('[interview] startInterview templateId=%s', templateId);
       const result = await startInterviewMutation({ variables: { templateId } });
       const interviewId = result.data?.startInterview.interviewId;
+      const totalQuestions = result.data?.startInterview.totalQuestions ?? 0;
       if (!interviewId) throw new Error('No interview ID returned from server');
       console.log('[interview] startInterview success interviewId=%s', interviewId);
       // Set interviewId and startedAt first — SSE enabled check reads interviewId
-      setSession((prev) => ({ ...prev, interviewId, startedAt: new Date() }));
+      setSession((prev) => ({ ...prev, interviewId, totalQuestions, startedAt: new Date() }));
 
       // Eagerly request microphone permission (non-blocking — interview continues on failure)
       ptt.requestPermission().catch(() => { /* microphoneError set in session by effect */ });
@@ -776,8 +781,9 @@ export function useInterviewState(templateId: string): {
       setSession((prev) => ({ ...prev, conflictingInterviewId: null }));
       const result = await startInterviewMutation({ variables: { templateId } });
       const interviewId = result.data?.startInterview.interviewId;
+      const totalQuestions = result.data?.startInterview.totalQuestions ?? 0;
       if (!interviewId) throw new Error('No interview ID returned from server');
-      setSession((prev) => ({ ...prev, interviewId, startedAt: new Date() }));
+      setSession((prev) => ({ ...prev, interviewId, totalQuestions, startedAt: new Date() }));
       ptt.requestPermission().catch(() => {});
       setMachineState('LLM_STREAMING');
     } catch (err) {

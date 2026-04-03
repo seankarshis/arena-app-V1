@@ -924,7 +924,7 @@ export const resolvers = {
     ) {
       requireAuth(ctx);
       const result = await startInterviewService(ctx.prisma, ctx.user!.userId, args.templateId);
-      return { interviewId: result.id };
+      return { interviewId: result.id, totalQuestions: result.totalQuestions };
     },
 
     async abandonInterview(

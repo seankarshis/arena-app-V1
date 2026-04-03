@@ -41,7 +41,7 @@ export async function startInterview(
   prisma: PrismaClient,
   userId: string,
   templateId: string,
-): Promise<{ id: string; userId: string; templateId: string; status: string; startedAt: string }> {
+): Promise<{ id: string; userId: string; templateId: string; status: string; startedAt: string; totalQuestions: number }> {
   // 1. Verify consent (unless bypassed)
   if (process.env.CONSENT_BYPASS !== 'true') {
     const consentRecords = await prisma.userConsentRecord.findMany({
@@ -154,6 +154,7 @@ export async function startInterview(
     templateId: interview.templateId,
     status: interview.status,
     startedAt: now.toISOString(),
+    totalQuestions: templateQuestions.length,
   };
 }
 
