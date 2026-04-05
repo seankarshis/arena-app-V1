@@ -1,7 +1,11 @@
-# Runbook — CDK Production Deploy Checklist
+# Runbook — CDK Deploy Checklist
 
-The CDK stacks have been coded but never deployed. This runbook covers the first deploy
-and everything that must be done manually afterwards for the app to start.
+The CDK stacks have been coded but never deployed. This runbook covers deploying the
+managed AWS services (Cognito, RDS, ElastiCache, Lambdas) for the first time.
+
+> **Deployment model:** App compute (API + Frontend) runs on EC2 via nginx + PM2 and is
+> deployed separately via GitHub Actions (`deploy-dev.yml` / `deploy-seandev.yml`). These
+> CDK stacks manage only the supporting AWS infrastructure. See ADR 004.
 
 ---
 
@@ -22,13 +26,13 @@ Deploy in order. Each stack depends on the previous.
 cd infrastructure
 npm install
 
-# Stack 1 — VPC, Cognito, S3, security groups, ECR, user-sync Lambda
+# Stack 1 — VPC, Cognito, S3, security groups, user-sync Lambda
 cdk deploy ArenaFoundationStack
 
 # Stack 2 — RDS, ElastiCache
 cdk deploy ArenaDataStack
 
-# Stack 3 — ECS, ALB, Lambdas, SQS, EventBridge
+# Stack 3 — SQS, cleaning Lambda, reconciliation Lambda, EventBridge rules
 cdk deploy ArenaComputeStack
 ```
 
@@ -101,7 +105,7 @@ aws secretsmanager put-secret-value \
 
 ## Phase 3 — Run Prisma migrations
 
-The CD pipeline runs migrations automatically. For the first deploy, run manually:
+Run against the new RDS instance:
 
 ```bash
 cd api
@@ -111,75 +115,23 @@ npx prisma migrate deploy
 
 ---
 
-## Phase 4 — Force a new ECS deployment
+## Phase 4 — Point the EC2 environments at AWS services
 
-After secrets are set, force new task launches so containers pick up the secret values:
+Update the `.env.local` files on the EC2 instance to use the new managed services:
 
+- Set `DATABASE_URL` to the RDS connection string from Phase 2
+- Set `REDIS_URL` to `redis://<ElasticacheEndpoint>:6379`
+- Set `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID` from FoundationStack outputs
+
+Then restart PM2:
 ```bash
-aws ecs update-service \
-  --cluster arena-cluster \
-  --service <ApiServiceName> \
-  --force-new-deployment
-
-aws ecs update-service \
-  --cluster arena-cluster \
-  --service <FrontendServiceName> \
-  --force-new-deployment
+pm2 restart seandev-api   # or arena-api for appv1
 ```
-
-Service names are in the `ArenaComputeStack` CloudFormation outputs.
-
-Wait for stability:
-```bash
-aws ecs wait services-stable \
-  --cluster arena-cluster \
-  --services <ApiServiceName> <FrontendServiceName>
-```
-
----
-
-## Phase 5 — Add ACM certificate for HTTPS
-
-The ALB currently has an HTTP-only listener. To enable HTTPS:
-
-1. Request a certificate in ACM for your production domain:
-   ```bash
-   aws acm request-certificate \
-     --domain-name app.elastichorizon.com \
-     --validation-method DNS
-   ```
-
-2. Add the DNS validation record to your DNS provider.
-
-3. Once issued, update `infrastructure/lib/compute-stack.ts` to replace the HTTP listener
-   with an HTTPS listener using the cert ARN, and add an HTTP→HTTPS redirect.
-
-4. `cdk deploy ArenaComputeStack`
-
----
-
-## Phase 6 — Smoke test
-
-```bash
-ALB_DNS=$(aws cloudformation describe-stacks \
-  --stack-name ArenaComputeStack \
-  --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" \
-  --output text)
-
-curl -f "http://$ALB_DNS/health"       # API health
-curl -f "http://$ALB_DNS/api/health"   # Frontend health
-```
-
-Both should return `200`.
 
 ---
 
 ## Notes
 
-- The `CORS_ORIGIN` env var in ComputeStack is currently set to `http://<ALB_DNS>`.
-  Once you have a real domain and ACM cert, update this to `https://app.elastichorizon.com`
-  and redeploy ComputeStack.
-- The S3 audio bucket CORS rule allows `*` origins. Tighten to the production domain
-  once known.
-- Audio upload mutations (`requestResponseAudioUploadUrl`, `requestDraftAudioUploadUrl`)
-  were removed from the schema and need to be re-implemented. See ADR 003.
+- The S3 audio bucket CORS rule allows `*` origins. Tighten to the production domain once known.
+- Audio upload mutations (`requestResponseAudioUploadUrl`, `requestDraftAudioUploadUrl`) were
+  removed from the schema and need to be re-implemented. See ADR 003.

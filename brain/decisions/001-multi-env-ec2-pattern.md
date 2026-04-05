@@ -5,9 +5,9 @@
 
 ## Context
 
-Multiple developers need isolated environments to work on Arena simultaneously before the ECS
-production stack is deployed. A shared EC2 instance is the current host. Each environment
-needs its own domain, database, and processes without interfering with others.
+Multiple developers need isolated environments to work on Arena simultaneously. A shared EC2
+instance is the host. Each environment needs its own domain, database, and processes without
+interfering with others. EC2 is the permanent deployment model (see ADR 004).
 
 ## Decision
 

@@ -2,7 +2,6 @@ import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -11,14 +10,12 @@ import { Construct } from 'constructs';
 
 /**
  * FoundationStack — VPC, subnets, security groups, Cognito user pool,
- * S3 audio bucket, Secrets Manager references, ECR repositories, and
- * the user-sync Lambda (must live here to avoid a cross-stack Cognito
- * trigger cycle with ComputeStack).
+ * S3 audio bucket, Secrets Manager references, and the user-sync Lambda
+ * (must live here to avoid a cross-stack Cognito trigger cycle — see ADR 002).
  */
 export class FoundationStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
-  public readonly albSg: ec2.SecurityGroup;
-  public readonly ecsSg: ec2.SecurityGroup;
+  public readonly lambdaSg: ec2.SecurityGroup;
   public readonly rdsSg: ec2.SecurityGroup;
   public readonly redisSg: ec2.SecurityGroup;
   public readonly userPool: cognito.UserPool;
@@ -30,9 +27,6 @@ export class FoundationStack extends cdk.Stack {
   public readonly databaseUrlSecret: secretsmanager.ISecret;
   public readonly logHashSaltSecret: secretsmanager.ISecret;
   public readonly clickhouseCredentialsSecret: secretsmanager.ISecret;
-  public readonly apiRepo: ecr.Repository;
-  public readonly frontendRepo: ecr.Repository;
-
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -55,42 +49,28 @@ export class FoundationStack extends cdk.Stack {
     });
 
     // ── Security Groups ────────────────────────────────────────────────
-    // ALB: inbound 80 + 443 from anywhere
-    this.albSg = new ec2.SecurityGroup(this, 'AlbSg', {
+    // Lambda functions: outbound only (reach RDS + Redis inside the VPC)
+    this.lambdaSg = new ec2.SecurityGroup(this, 'LambdaSg', {
       vpc: this.vpc,
-      description: 'ALB — inbound HTTP/HTTPS from anywhere',
+      description: 'Lambda functions — outbound to RDS/Redis inside VPC',
       allowAllOutbound: true,
     });
-    this.albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP from anywhere');
-    this.albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS from anywhere');
 
-    // ECS tasks: inbound from ALB on ports 3000-3010
-    this.ecsSg = new ec2.SecurityGroup(this, 'EcsSg', {
-      vpc: this.vpc,
-      description: 'ECS tasks — inbound from ALB on app ports',
-      allowAllOutbound: true,
-    });
-    this.ecsSg.addIngressRule(
-      this.albSg,
-      ec2.Port.tcpRange(3000, 3010),
-      'App ports from ALB',
-    );
-
-    // RDS: inbound from ECS on 5432 only
+    // RDS: inbound from Lambda on 5432 only
     this.rdsSg = new ec2.SecurityGroup(this, 'RdsSg', {
       vpc: this.vpc,
-      description: 'RDS — inbound PostgreSQL from ECS tasks only',
+      description: 'RDS — inbound PostgreSQL from Lambda functions only',
       allowAllOutbound: false,
     });
-    this.rdsSg.addIngressRule(this.ecsSg, ec2.Port.tcp(5432), 'PostgreSQL from ECS');
+    this.rdsSg.addIngressRule(this.lambdaSg, ec2.Port.tcp(5432), 'PostgreSQL from Lambda');
 
-    // Redis: inbound from ECS on 6379 only
+    // Redis: inbound from Lambda on 6379 only
     this.redisSg = new ec2.SecurityGroup(this, 'RedisSg', {
       vpc: this.vpc,
-      description: 'Redis — inbound from ECS tasks only',
+      description: 'Redis — inbound from Lambda functions only',
       allowAllOutbound: false,
     });
-    this.redisSg.addIngressRule(this.ecsSg, ec2.Port.tcp(6379), 'Redis from ECS');
+    this.redisSg.addIngressRule(this.lambdaSg, ec2.Port.tcp(6379), 'Redis from Lambda');
 
     // ── Secrets Manager References ─────────────────────────────────────
     // Values are set manually by operators — we only reference existing secrets.
@@ -199,7 +179,7 @@ export class FoundationStack extends cdk.Stack {
       logGroup: userSyncLogGroup,
       vpc: this.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-      securityGroups: [this.ecsSg],
+      securityGroups: [this.lambdaSg],
       environment: {
         // Resolved at deploy time via CloudFormation dynamic reference.
         // TODO: migrate to Lambda Secrets Manager extension for rotation support.
@@ -232,7 +212,7 @@ export class FoundationStack extends cdk.Stack {
       ],
       cors: [
         {
-          // Tighten to ALB domain once known
+          // Tighten to the production domain once known
           allowedOrigins: ['*'],
           allowedMethods: [s3.HttpMethods.PUT],
           allowedHeaders: ['*'],
@@ -247,39 +227,5 @@ export class FoundationStack extends cdk.Stack {
       exportName: 'ArenaAudioBucketName',
     });
 
-    // ── ECR Repositories ────────────────────────────────────────────────
-    this.apiRepo = new ecr.Repository(this, 'ApiRepo', {
-      repositoryName: 'arena-api',
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      lifecycleRules: [
-        {
-          maxImageCount: 10,
-          description: 'Keep only the 10 most recent images',
-        },
-      ],
-    });
-
-    this.frontendRepo = new ecr.Repository(this, 'FrontendRepo', {
-      repositoryName: 'arena-frontend',
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      lifecycleRules: [
-        {
-          maxImageCount: 10,
-          description: 'Keep only the 10 most recent images',
-        },
-      ],
-    });
-
-    new cdk.CfnOutput(this, 'ApiRepoUri', {
-      value: this.apiRepo.repositoryUri,
-      description: 'API ECR repository URI',
-      exportName: 'ArenaApiRepoUri',
-    });
-
-    new cdk.CfnOutput(this, 'FrontendRepoUri', {
-      value: this.frontendRepo.repositoryUri,
-      description: 'Frontend ECR repository URI',
-      exportName: 'ArenaFrontendRepoUri',
-    });
   }
 }

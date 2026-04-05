@@ -5,6 +5,10 @@ import { FoundationStack } from '../lib/foundation-stack';
 import { DataStack } from '../lib/data-stack';
 import { ComputeStack } from '../lib/compute-stack';
 
+// Deployment model: app compute (API + Frontend) runs on EC2 via nginx + PM2.
+// These CDK stacks manage only the AWS-managed services: Cognito, RDS,
+// ElastiCache, S3, and background Lambdas. See ADR 004.
+
 const app = new cdk.App();
 
 const env: cdk.Environment = {
@@ -19,8 +23,4 @@ const dataStack = new DataStack(app, 'ArenaDataStack', {
   foundationStack,
 });
 
-new ComputeStack(app, 'ArenaComputeStack', {
-  env,
-  foundationStack,
-  dataStack,
-});
+new ComputeStack(app, 'ArenaComputeStack', { env });
