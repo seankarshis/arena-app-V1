@@ -6,3 +6,4 @@ dist/
 *.js.map
 pgdata/
 *.tsbuildinfo
+infrastructure/cdk.out/
