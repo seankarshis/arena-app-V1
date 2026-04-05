@@ -178,7 +178,9 @@ jobs:
         id: changed-files
         run: |
           # On a push to main, compare HEAD against its parent
-          CHANGED=$(git diff --name-only HEAD~1...HEAD -- '*.ts' '*.tsx' | tr '\n' ',' | sed 's/,$//')
+          CHANGED=$(git diff --name-only HEAD~1...HEAD \
+            -- 'api/src/' 'frontend/src/' 'infrastructure/lambdas/' \
+            | grep -E '\.(ts|tsx)$' | tr '\n' ',' | sed 's/,$//')
           echo "Changed TS files: $CHANGED"
           echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
 
