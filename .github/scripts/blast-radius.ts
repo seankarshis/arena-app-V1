@@ -8,7 +8,7 @@
  * (upstream). Output is written to blast-radius.json.
  *
  * Usage:
- *   npx ts-node .github/scripts/blast-radius.ts --files "src/a.ts,src/b.ts"
+ *   npx ts-node .github/scripts/blast-radius.ts --files "api/src/schema/resolvers/interview.ts,frontend/src/hooks/useInterview.ts"
  *   npx ts-node .github/scripts/blast-radius.ts --from-file changed-files.txt [--depth 3]
  */
 

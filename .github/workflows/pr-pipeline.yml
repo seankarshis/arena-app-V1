@@ -4,8 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - 'api/**'
-      - 'frontend/**'
+      - 'api/src/**'
+      - 'frontend/src/**'
       - 'infrastructure/lambdas/**'
       - 'package.json'
       - 'package-lock.json'
@@ -234,7 +234,9 @@ jobs:
       - name: Get changed TypeScript files
         id: changed-files
         run: |
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.ts' '*.tsx' | tr '\n' ',' | sed 's/,$//')
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
+            -- 'api/src/' 'frontend/src/' 'infrastructure/lambdas/' \
+            | grep -E '\.(ts|tsx)$' | tr '\n' ',' | sed 's/,$//')
           echo "Changed TS files: $CHANGED"
           echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
 
