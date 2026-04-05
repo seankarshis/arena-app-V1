@@ -151,10 +151,11 @@ cd frontend && npm run dev        # Start Next.js
 
 ## Current Build State
 
-*This section is updated as tasks complete.*
+*Last updated: 2026-04-05. See `brain/architecture/current-state.md` for full detail.*
 
-- **Completed modules:** (none yet)
-- **In progress:** (not started)
-- **Schema version:** (no migrations yet)
-- **Infrastructure deployed:** (none yet)
-- **Known issues:** (none yet)
+- **Completed modules:** API (Fastify + Apollo + Prisma, all resolvers), Frontend (Next.js, admin UI, interview UI, all hooks), all three Lambda handlers (cleaning, reconciliation, user-sync), CI/CD pipelines, all three CDK stacks (coded, not yet deployed)
+- **In progress:** (nothing active)
+- **Schema version:** Migrations exist in `api/prisma/migrations/` — run `npx prisma migrate deploy` against a fresh DB
+- **Infrastructure deployed:** EC2 dev environments only (appv1, seandev). CDK stacks coded but never deployed to AWS.
+- **Known gaps:** Audio upload via S3 presigned URLs not implemented (schema stubs removed — see `brain/decisions/003`). ALB HTTPS listener pending ACM cert. Frontend test coverage minimal.
+- **Next work:** First CDK production deploy — follow `brain/runbooks/cdk-deploy-checklist.md`
