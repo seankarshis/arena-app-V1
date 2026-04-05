@@ -81,9 +81,6 @@ This project is defined by two specification documents. Both are authoritative w
 ### brandStandards.md
 Referenced ONLY when building UI components (frontend pages, React components). Never referenced for infrastructure, API, database, or Lambda work.
 
-### developmentTasks.md
-Defines the sequenced implementation plan. Each task specifies which sections of which spec documents to read. Follow those references.
-
 ## Immutable Technical Constraints
 
 These constraints apply to ALL code in this repository. They are non-negotiable.
