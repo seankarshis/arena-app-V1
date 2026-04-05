@@ -12,6 +12,7 @@
  *   npx ts-node .github/scripts/blast-radius.ts --from-file changed-files.txt [--depth 3]
  */
 
+// @ts-ignore
 import madge from 'madge';
 import * as fs from 'fs';
 import * as path from 'path';
