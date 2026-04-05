@@ -278,6 +278,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: ./.github/actions/run-agent
         with:
           agent-name: linting
@@ -292,6 +295,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: ./.github/actions/run-agent
         with:
           agent-name: security
@@ -307,6 +313,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: ./.github/actions/run-agent
         with:
           agent-name: speed
@@ -321,6 +330,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: ./.github/actions/run-agent
         with:
           agent-name: unit-tests
@@ -335,6 +347,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: ./.github/actions/run-agent
         with:
           agent-name: documentation
@@ -349,6 +364,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: ./.github/actions/run-agent
         with:
           agent-name: api-contracts
