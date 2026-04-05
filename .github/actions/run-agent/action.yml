@@ -1,0 +1,314 @@
+name: 'Run CI Agent'
+description: >
+  Invoke an AI agent Lambda, apply file fixes, commit changes with the
+  github-actions[bot] identity, and upload the agent report as an artifact.
+
+inputs:
+  agent-name:
+    description: 'Agent identifier used for logging and artifact naming (e.g. linting, security)'
+    required: true
+  lambda-function-name:
+    description: 'Full AWS Lambda function name to invoke'
+    required: true
+  additional-context-artifact:
+    description: >
+      Optional artifact name to download and pass as additional_context to the Lambda
+      (e.g. "bearer-report" for the security agent)
+    required: false
+    default: ''
+  aws-role-arn:
+    description: 'IAM role ARN to assume for Lambda invocation (OIDC). Falls back to ambient credentials if empty.'
+    required: false
+    default: ''
+  aws-region:
+    description: 'AWS region'
+    required: false
+    default: 'us-east-1'
+
+runs:
+  using: 'composite'
+  steps:
+    # ── 1. Checkout the branch tip, including any fixes committed by earlier agents ──
+    - name: Checkout latest (including prior agent commits)
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+        fetch-depth: 1
+        token: ${{ github.token }}
+
+    # ── 2. Configure AWS credentials (OIDC preferred, falls back to ambient env) ──
+    - name: Configure AWS credentials
+      if: inputs.aws-role-arn != ''
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.aws-role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+
+    # ── 3. Download blast-radius artifact ──
+    - name: Download blast-radius artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: blast-radius
+        path: .ci-artifacts/
+
+    # ── 4. Download additional context artifact (optional) ──
+    - name: Download additional context artifact
+      if: inputs.additional-context-artifact != ''
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.additional-context-artifact }}
+        path: .ci-artifacts/additional-context/
+      continue-on-error: true
+
+    # ── 5. Download all previously uploaded agent reports ──
+    #    continue-on-error because the first agent (linting) has no prior reports.
+    - name: Download previous agent reports
+      uses: actions/download-artifact@v4
+      with:
+        pattern: '*-report'
+        path: .ci-artifacts/reports/
+        merge-multiple: true
+      continue-on-error: true
+
+    # ── 6. Build the Lambda payload JSON ──
+    #    Reads file contents from full_scope, collects previous reports,
+    #    and merges optional additional context.
+    #    Enforces the 6 MB Lambda synchronous-invocation limit:
+    #    if the payload would exceed 5 MB (safety margin), file contents
+    #    are truncated proportionally until the payload fits.
+    - name: Prepare Lambda payload
+      id: prepare-payload
+      shell: bash
+      env:
+        AGENT_NAME: ${{ inputs.agent-name }}
+        ADDITIONAL_CONTEXT_ARTIFACT: ${{ inputs.additional-context-artifact }}
+      run: |
+        python3 << 'PYEOF'
+        import json, os, glob, sys
+
+        agent_name = os.environ['AGENT_NAME']
+        additional_artifact = os.environ.get('ADDITIONAL_CONTEXT_ARTIFACT', '')
+
+        # ── Read blast-radius output ──────────────────────────────────────────
+        blast_path = '.ci-artifacts/blast-radius.json'
+        if not os.path.isfile(blast_path):
+            print('ERROR: blast-radius.json not found', file=sys.stderr)
+            sys.exit(1)
+
+        blast = json.load(open(blast_path))
+        full_scope = blast.get('full_scope', [])
+        print(f'Blast radius: {len(full_scope)} files in scope')
+
+        # ── Read file contents ────────────────────────────────────────────────
+        files: dict[str, str] = {}
+        for fp in full_scope:
+            if os.path.isfile(fp):
+                try:
+                    files[fp] = open(fp, encoding='utf-8', errors='replace').read()
+                except Exception as exc:
+                    print(f'  WARN: could not read {fp}: {exc}', file=sys.stderr)
+                    files[fp] = ''
+
+        # ── Collect previous agent reports ────────────────────────────────────
+        reports = []
+        report_dir = '.ci-artifacts/reports'
+        if os.path.isdir(report_dir):
+            for report_file in sorted(glob.glob(f'{report_dir}/*.json')):
+                try:
+                    reports.append(json.load(open(report_file)))
+                except Exception as exc:
+                    print(f'  WARN: could not parse {report_file}: {exc}', file=sys.stderr)
+        print(f'Previous reports loaded: {len(reports)}')
+
+        # ── Load additional context ───────────────────────────────────────────
+        additional_context = None
+        if additional_artifact:
+            context_dir = '.ci-artifacts/additional-context'
+            if os.path.isdir(context_dir):
+                for ctx_file in glob.glob(f'{context_dir}/*.json'):
+                    try:
+                        additional_context = json.load(open(ctx_file))
+                        print(f'Loaded additional context from {ctx_file}')
+                        break
+                    except Exception as exc:
+                        print(f'  WARN: could not parse {ctx_file}: {exc}', file=sys.stderr)
+
+        # ── Assemble payload ──────────────────────────────────────────────────
+        payload: dict = {
+            'agent': agent_name,
+            'files': files,
+            'blast_radius': full_scope,
+            'previous_reports': reports,
+        }
+        if additional_context is not None:
+            payload['additional_context'] = additional_context
+
+        # ── Enforce 6 MB Lambda synchronous-invocation limit ─────────────────
+        # Use 5 MB as the soft ceiling to leave headroom for request metadata.
+        LIMIT_BYTES = 5 * 1024 * 1024  # 5 MB
+
+        payload_bytes = json.dumps(payload).encode('utf-8')
+        if len(payload_bytes) > LIMIT_BYTES:
+            print(
+                f'WARNING: Payload is {len(payload_bytes):,} bytes (>{LIMIT_BYTES:,}). '
+                'Truncating file contents to fit within Lambda 6 MB limit.',
+                file=sys.stderr,
+            )
+            # Calculate how much space files can use
+            overhead = len(json.dumps({**payload, 'files': {}}).encode('utf-8'))
+            budget = LIMIT_BYTES - overhead
+            if budget <= 0:
+                # Even an empty files dict is too large — truncate reports
+                print('WARNING: Payload too large even with empty files dict. Dropping previous reports.', file=sys.stderr)
+                payload['previous_reports'] = []
+                overhead = len(json.dumps({**payload, 'files': {}}).encode('utf-8'))
+                budget = max(LIMIT_BYTES - overhead, 0)
+
+            # Distribute the budget equally across all files
+            if files and budget > 0:
+                per_file_budget = budget // max(len(files), 1)
+                truncated_files = {}
+                for fp, content in files.items():
+                    encoded = content.encode('utf-8')
+                    if len(encoded) > per_file_budget:
+                        content = encoded[:per_file_budget].decode('utf-8', errors='ignore')
+                        content += '\n# [TRUNCATED — file exceeded per-file budget for Lambda payload]\n'
+                    truncated_files[fp] = content
+                payload['files'] = truncated_files
+
+            payload_bytes = json.dumps(payload).encode('utf-8')
+            print(f'Payload after truncation: {len(payload_bytes):,} bytes', file=sys.stderr)
+        else:
+            print(f'Payload size: {len(payload_bytes):,} bytes (within limit)')
+
+        # ── Write payload to disk ─────────────────────────────────────────────
+        with open('payload.json', 'wb') as f:
+            f.write(payload_bytes)
+        print('payload.json written successfully')
+        PYEOF
+
+    # ── 7. Invoke the Lambda function ──
+    - name: Invoke Lambda
+      shell: bash
+      env:
+        AGENT_NAME: ${{ inputs.agent-name }}
+        LAMBDA_FUNCTION: ${{ inputs.lambda-function-name }}
+        AWS_DEFAULT_REGION: ${{ inputs.aws-region }}
+      run: |
+        echo "Invoking Lambda: $LAMBDA_FUNCTION (agent: $AGENT_NAME)"
+
+        # Invoke and capture the invocation metadata (StatusCode, FunctionError, etc.)
+        aws lambda invoke \
+          --function-name "$LAMBDA_FUNCTION" \
+          --payload file://payload.json \
+          --cli-binary-format raw-in-base64-out \
+          --cli-read-timeout 300 \
+          response.json \
+          > invoke-metadata.json 2>&1
+
+        echo "Invocation metadata:"
+        cat invoke-metadata.json
+
+        # Fail the step if Lambda reported a function error
+        if jq -e '.FunctionError' invoke-metadata.json > /dev/null 2>&1; then
+          echo "::error::Lambda function returned an error for agent $AGENT_NAME"
+          echo "Lambda error response:"
+          cat response.json
+          exit 1
+        fi
+
+        # Verify response.json is valid JSON (Lambda always writes to this file)
+        if ! jq empty response.json > /dev/null 2>&1; then
+          echo "::error::Lambda response is not valid JSON"
+          cat response.json
+          exit 1
+        fi
+
+        echo "Lambda invocation successful"
+
+    # ── 8 & 9. Extract fixed files and write them to disk ──
+    - name: Apply file fixes
+      shell: bash
+      env:
+        AGENT_NAME: ${{ inputs.agent-name }}
+      run: |
+        python3 << 'PYEOF'
+        import json, os, sys
+
+        agent_name = os.environ['AGENT_NAME']
+
+        response = json.load(open('response.json'))
+
+        # Check for Lambda-level error envelope
+        if 'errorMessage' in response:
+            print(f'ERROR: Lambda returned error: {response.get("errorMessage")}', file=sys.stderr)
+            sys.exit(1)
+
+        fixed_files: dict = response.get('fixed_files', {})
+        if not fixed_files:
+            print('No file fixes returned by Lambda')
+        else:
+            print(f'Applying {len(fixed_files)} file fix(es):')
+            for filepath, content in fixed_files.items():
+                # Resolve relative to repo root and refuse path traversal
+                abs_path = os.path.realpath(os.path.abspath(filepath))
+                repo_root = os.path.realpath(os.getcwd())
+                if not abs_path.startswith(repo_root):
+                    print(f'  SKIP (path traversal): {filepath}', file=sys.stderr)
+                    continue
+                os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+                with open(abs_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                print(f'  wrote: {filepath}')
+
+        # Save the report to the artifacts staging directory
+        os.makedirs('.ci-artifacts', exist_ok=True)
+        report = response.get('report', {})
+        report_path = f'.ci-artifacts/{agent_name}-report.json'
+        with open(report_path, 'w') as f:
+            json.dump(report, f, indent=2)
+        print(f'Report saved to {report_path}')
+        PYEOF
+
+    # ── 10. Commit and push fixes (only if there are staged changes) ──
+    - name: Commit and push fixes
+      shell: bash
+      env:
+        AGENT_NAME: ${{ inputs.agent-name }}
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        # Stage all changes (the agent may have fixed multiple files)
+        git add -A
+
+        # Check if there is actually anything to commit
+        if git diff --staged --quiet; then
+          echo "No file changes to commit for $AGENT_NAME"
+        else
+          # Extract the summary from the Lambda report for the commit message
+          SUMMARY=$(jq -r '.report.summary // "auto-fix"' response.json 2>/dev/null | head -c 120)
+          git commit -m "[$AGENT_NAME] $SUMMARY"
+          git push
+          # Record the commit SHA back into the report on disk
+          COMMIT_SHA=$(git rev-parse HEAD)
+          python3 -c "
+        import json, sys
+        path = '.ci-artifacts/$AGENT_NAME-report.json'
+        try:
+            report = json.load(open(path))
+            report['commit_sha'] = '$COMMIT_SHA'
+            json.dump(report, open(path, 'w'), indent=2)
+        except Exception as e:
+            print(f'WARN: could not patch commit_sha into report: {e}', file=sys.stderr)
+          "
+          echo "Committed and pushed fixes: $COMMIT_SHA"
+        fi
+
+    # ── 11. Upload agent report as an artifact for downstream jobs ──
+    - name: Upload agent report artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.agent-name }}-report
+        path: .ci-artifacts/${{ inputs.agent-name }}-report.json
+        if-no-files-found: error

@@ -1,0 +1,543 @@
+name: PR Quality Pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'api/**'
+      - 'frontend/**'
+      - 'infrastructure/lambdas/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig*.json'
+
+# Cancel in-progress runs when a new commit is pushed to the same PR branch.
+# This prevents wasted Lambda invocations when developers push frequently.
+concurrency:
+  group: pr-pipeline-${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write       # OIDC token for AWS credential federation
+  contents: write       # agent jobs push fix commits to the PR branch
+  pull-requests: write  # synthesis job posts / updates the PR comment
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SKIP CHECK
+# Every subsequent job depends on this. If the last commit was authored by
+# github-actions[bot] (an agent fix commit), we skip the entire pipeline to
+# prevent infinite loops — GitHub does not suppress workflow triggers on bot
+# commits the way it does for workflow_run events.
+# ──────────────────────────────────────────────────────────────────────────────
+jobs:
+  check-author:
+    name: Skip check — bot commit?
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Detect github-actions[bot] commit
+        id: check
+        run: |
+          AUTHOR=$(git log -1 --format='%an')
+          echo "Latest commit author: $AUTHOR"
+          if [[ "$AUTHOR" == "github-actions[bot]" ]]; then
+            echo "Skipping pipeline — commit was made by github-actions[bot]"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PHASE 1: DETERMINISTIC PRE-CHECKS  (all run in parallel)
+# ──────────────────────────────────────────────────────────────────────────────
+
+  dependency-audit:
+    name: Dependency Audit
+    needs: check-author
+    if: needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: Run npm audit (API)
+        working-directory: api
+        run: |
+          npm audit --json > ../audit-report.json || true
+          # Fail if there are critical or high vulnerabilities
+          CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' ../audit-report.json)
+          HIGH=$(jq '.metadata.vulnerabilities.high // 0' ../audit-report.json)
+          echo "Critical vulnerabilities: $CRITICAL"
+          echo "High vulnerabilities:     $HIGH"
+          if [[ "$CRITICAL" -gt 0 || "$HIGH" -gt 0 ]]; then
+            echo "::error::npm audit found $CRITICAL critical and $HIGH high severity vulnerabilities"
+            jq '.vulnerabilities | to_entries[] | select(.value.severity == "critical" or .value.severity == "high") | {name: .key, severity: .value.severity, via: .value.via[0].url // ""}' ../audit-report.json || true
+            exit 1
+          fi
+          echo "No critical/high vulnerabilities found"
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-report
+          path: audit-report.json
+
+  bundle-size:
+    name: Bundle Size Check
+    needs: check-author
+    if: needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+        env:
+          # Prevent Next.js telemetry during CI
+          NEXT_TELEMETRY_DISABLED: '1'
+          # Provide minimal stubs for env vars needed at build time
+          NEXT_PUBLIC_API_URL: 'http://localhost:3001/graphql'
+
+      - name: Analyze bundle size
+        working-directory: frontend
+        run: |
+          # Collect page sizes from the Next.js build manifest
+          python3 << 'PYEOF'
+          import json, os, pathlib, sys
+
+          build_dir = pathlib.Path('.next')
+          if not build_dir.exists():
+              print('ERROR: .next directory not found after build', file=sys.stderr)
+              sys.exit(1)
+
+          # Read the build manifest for route-level sizes
+          manifest_path = build_dir / 'build-manifest.json'
+          stats: dict = {'routes': {}, 'total_static_bytes': 0}
+
+          if manifest_path.exists():
+              manifest = json.loads(manifest_path.read_text())
+              for route, chunks in manifest.get('pages', {}).items():
+                  route_bytes = sum(
+                      (build_dir / 'static' / chunk).stat().st_size
+                      for chunk in chunks
+                      if (build_dir / 'static' / chunk).exists()
+                  )
+                  stats['routes'][route] = route_bytes
+
+          # Also measure total static dir size
+          for p in (build_dir / 'static').rglob('*'):
+              if p.is_file():
+                  stats['total_static_bytes'] += p.stat().st_size
+
+          # Threshold: warn if total static output exceeds 10 MB
+          LIMIT_BYTES = 10 * 1024 * 1024
+          total = stats['total_static_bytes']
+          print(f'Total static bundle size: {total / 1024 / 1024:.2f} MB')
+          for route, size in sorted(stats['routes'].items(), key=lambda x: -x[1])[:10]:
+              print(f'  {route}: {size / 1024:.1f} KB')
+
+          stats['limit_bytes'] = LIMIT_BYTES
+          stats['within_limit'] = total <= LIMIT_BYTES
+
+          with open('../bundle-size-report.json', 'w') as f:
+              json.dump(stats, f, indent=2)
+
+          if total > LIMIT_BYTES:
+              print(f'::error::Total bundle size {total / 1024 / 1024:.2f} MB exceeds {LIMIT_BYTES / 1024 / 1024:.0f} MB limit')
+              sys.exit(1)
+          PYEOF
+
+      - name: Upload bundle size report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bundle-size-report
+          path: frontend/bundle-size-report.json
+
+  bearer-scan:
+    name: Bearer SAST Scan
+    needs: check-author
+    if: needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Bearer SAST scan
+        uses: bearer/bearer-action@v2
+        with:
+          format: json
+          output: bearer-report.json
+          # Fail on critical and high severity findings
+          severity: critical,high
+
+      - name: Upload Bearer report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bearer-report
+          path: bearer-report.json
+
+  blast-radius:
+    name: Blast Radius Analysis
+    needs: check-author
+    if: needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history needed for git diff against base branch
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install root dependencies (madge, ts-node)
+        run: npm install
+
+      - name: Get changed TypeScript files
+        id: changed-files
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.ts' '*.tsx' | tr '\n' ',' | sed 's/,$//')
+          echo "Changed TS files: $CHANGED"
+          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
+
+      - name: Run blast radius analysis
+        run: |
+          if [[ -z "${{ steps.changed-files.outputs.files }}" ]]; then
+            echo "No TypeScript files changed — writing empty blast-radius.json"
+            echo '{"changed_files":[],"downstream_dependencies":[],"upstream_dependents":[],"full_scope":[],"stats":{"changed_count":0,"downstream_count":0,"upstream_count":0,"total_scope":0,"total_repo_files":0}}' > blast-radius.json
+          else
+            npx ts-node .github/scripts/blast-radius.ts \
+              --files "${{ steps.changed-files.outputs.files }}"
+          fi
+
+      - name: Display blast radius summary
+        run: |
+          jq '{changed: .stats.changed_count, in_scope: .stats.total_scope, repo_total: .stats.total_repo_files}' blast-radius.json
+
+      - name: Upload blast-radius artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blast-radius
+          path: blast-radius.json
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PHASE 2: AI AGENT SEQUENCE  (sequential — each builds on the previous)
+# Each job uses the run-agent composite action which:
+#   1. Checks out latest (including any prior agent commits)
+#   2. Assembles the Lambda payload from blast-radius + file contents + prior reports
+#   3. Invokes the Lambda and applies returned file fixes
+#   4. Commits with [agent-name] tag using github-actions[bot] identity
+#   5. Uploads the agent report for downstream jobs
+# ──────────────────────────────────────────────────────────────────────────────
+
+  agent-linting:
+    name: Agent — Linting
+    needs: [check-author, dependency-audit, bundle-size, bearer-scan, blast-radius]
+    if: needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: linting
+          lambda-function-name: ci-agent-linting
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+  agent-security:
+    name: Agent — Security
+    needs: [agent-linting]
+    if: needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: security
+          lambda-function-name: ci-agent-security
+          additional-context-artifact: bearer-report
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+  agent-speed:
+    name: Agent — Speed Optimization
+    needs: [agent-security]
+    if: needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: speed
+          lambda-function-name: ci-agent-speed
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+  agent-unit-tests:
+    name: Agent — Unit Tests
+    needs: [agent-speed]
+    if: needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: unit-tests
+          lambda-function-name: ci-agent-unit-tests
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+  agent-documentation:
+    name: Agent — Documentation
+    needs: [agent-unit-tests]
+    if: needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: documentation
+          lambda-function-name: ci-agent-documentation
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+  agent-api-contracts:
+    name: Agent — API Contracts
+    needs: [agent-documentation]
+    if: needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: api-contracts
+          lambda-function-name: ci-agent-api-contracts
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PHASE 3: SYNTHESIS
+# Runs always (even if agents failed) so the PR always gets a status comment.
+# Invokes the synthesis Lambda which: aggregates reports, makes the pass/fail
+# decision, generates the PR comment markdown, and creates Linear tickets for
+# unresolved findings.
+# ──────────────────────────────────────────────────────────────────────────────
+
+  synthesis:
+    name: Synthesis — Aggregate & Comment
+    needs:
+      - check-author
+      - agent-linting
+      - agent-security
+      - agent-speed
+      - agent-unit-tests
+      - agent-documentation
+      - agent-api-contracts
+    # always() ensures this runs even when earlier jobs failed or were cancelled.
+    # The explicit bot-commit check re-guards the gate condition.
+    if: always() && needs.check-author.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Download all six agent reports. continue-on-error because a failed agent
+      # may not have uploaded a report — the synthesis Lambda handles missing reports.
+      - name: Download all agent reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-report'
+          path: agent-reports/
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Download blast-radius artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: blast-radius
+          path: .
+
+      # Build and invoke the synthesis Lambda
+      - name: Prepare synthesis payload
+        run: |
+          python3 << 'PYEOF'
+          import json, os, glob
+
+          # Load blast radius stats for the payload
+          blast = json.load(open('blast-radius.json'))
+          blast_stats = {
+              'changed_count': blast['stats']['changed_count'],
+              'total_scope': blast['stats']['total_scope'],
+          }
+
+          # Collect all agent reports
+          reports = []
+          for report_file in sorted(glob.glob('agent-reports/*.json')):
+              try:
+                  reports.append(json.load(open(report_file)))
+              except Exception as exc:
+                  print(f'WARN: could not parse {report_file}: {exc}')
+
+          print(f'Loaded {len(reports)} agent reports for synthesis')
+
+          payload = {
+              'pr_number': int(os.environ['PR_NUMBER']),
+              'pr_title': os.environ['PR_TITLE'],
+              'pr_author': os.environ['PR_AUTHOR'],
+              'pr_url': os.environ['PR_URL'],
+              'repository': os.environ['REPOSITORY'],
+              'agent_reports': reports,
+              'blast_radius_stats': blast_stats,
+          }
+
+          with open('synthesis-payload.json', 'w') as f:
+              json.dump(payload, f, indent=2)
+          print('synthesis-payload.json written')
+          PYEOF
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          REPOSITORY: ${{ github.repository }}
+
+      - name: Invoke synthesis Lambda
+        run: |
+          aws lambda invoke \
+            --function-name ci-agent-synthesis \
+            --payload file://synthesis-payload.json \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 300 \
+            synthesis-response.json \
+            > synthesis-invoke-metadata.json 2>&1
+
+          echo "Synthesis invocation metadata:"
+          cat synthesis-invoke-metadata.json
+
+          if jq -e '.FunctionError' synthesis-invoke-metadata.json > /dev/null 2>&1; then
+            echo "::error::Synthesis Lambda returned a function error"
+            cat synthesis-response.json
+            exit 1
+          fi
+
+          if ! jq empty synthesis-response.json > /dev/null 2>&1; then
+            echo "::error::Synthesis Lambda response is not valid JSON"
+            cat synthesis-response.json
+            exit 1
+          fi
+
+          echo "Synthesis Lambda completed successfully"
+          jq '{overall_status: .overall_status, total_findings: .summary.total_findings, fixed: .summary.fixed_count, unfixed: .summary.unfixed_count, tickets_created: (.linear_tickets | length)}' synthesis-response.json
+
+      # Post or update the PR comment. Uses a hidden HTML comment as a marker
+      # so subsequent pipeline runs replace the existing comment rather than
+      # accumulating multiple bot comments on the same PR.
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const response = JSON.parse(fs.readFileSync('synthesis-response.json', 'utf8'));
+
+            const MARKER = '<!-- arena-ci-pipeline -->';
+            const commentBody = `${MARKER}\n${response.pr_comment}`;
+
+            // Find an existing pipeline comment on this PR
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes(MARKER)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: commentBody,
+              });
+              console.log(`Updated existing pipeline comment #${existing.id}`);
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody,
+              });
+              console.log('Created new pipeline comment');
+            }
+
+      # Log any Linear ticket URLs so they appear in the workflow run summary.
+      - name: Log Linear tickets created
+        run: |
+          TICKET_COUNT=$(jq '.linear_tickets | length' synthesis-response.json)
+          echo "Linear tickets created: $TICKET_COUNT"
+          if [[ "$TICKET_COUNT" -gt 0 ]]; then
+            echo "Ticket URLs:"
+            jq -r '.linear_tickets[] | "  \(.identifier): \(.title) — \(.url)"' synthesis-response.json
+          fi
+
+      # Fail the workflow if the synthesis Lambda determined the PR should be blocked.
+      # This causes the required status check to fail, preventing merge.
+      - name: Enforce pass/fail status
+        run: |
+          STATUS=$(jq -r '.overall_status' synthesis-response.json)
+          echo "Overall pipeline status: $STATUS"
+          if [[ "$STATUS" == "fail" ]]; then
+            echo "::error::PR pipeline failed. Check the PR comment for details and Linear tickets for action items."
+            exit 1
+          fi
+          echo "PR pipeline passed."
