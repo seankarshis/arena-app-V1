@@ -31,8 +31,8 @@ mutations.
 
 Implement the full audio upload flow after:
 1. CDK stacks are deployed and the S3 bucket (`arena-audio-<account>-<region>`) exists
-2. The API ECS task role has `s3:PutObject` on the bucket (already granted in ComputeStack)
-3. `S3_AUDIO_BUCKET` and `S3_REGION` env vars are confirmed set in the task definition
+2. The EC2 instance has S3 access (via IAM instance profile or `AWS_ACCESS_KEY_ID` in `.env.local`)
+3. `S3_AUDIO_BUCKET` and `S3_REGION` env vars are set in `.env.local` on the EC2 instance
 
 The implementation should use `@aws-sdk/s3-request-presigner` and `PutObjectCommand` to
 generate a presigned URL scoped to the specific interview and response IDs.

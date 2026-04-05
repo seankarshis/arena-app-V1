@@ -1,0 +1,15 @@
+{
+  "name": "arena-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Arena monorepo root — scripts and shared tooling",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "madge": "^7.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  },
+  "scripts": {
+    "blast-radius": "npx ts-node .github/scripts/blast-radius.ts"
+  }
+}

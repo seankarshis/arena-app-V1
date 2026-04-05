@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  "include": [".github/scripts/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "api",
+    "frontend",
+    "infrastructure",
+    "cicd"
+  ]
+}

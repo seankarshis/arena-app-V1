@@ -85,7 +85,7 @@ All three stacks are fully implemented. CDK `cdk synth` passes.
 
 #### FoundationStack
 - VPC (2 AZs, 1 NAT gateway, public + private subnets)
-- Security groups: ALB, ECS, RDS, Redis
+- Security groups: Lambda (outbound only), RDS, Redis
 - Cognito User Pool (admin-invite-only, email sign-in, `admin` + `user` groups)
 - Cognito App Client (no secret, SRP auth)
 - S3 audio bucket (private, 90-day lifecycle, CORS for PUT)
@@ -96,7 +96,6 @@ All three stacks are fully implemented. CDK `cdk synth` passes.
   - `arena/log-hash-salt`
   - `arena/clickhouse-credentials` (JSON with CLICKHOUSE_USER, CLICKHOUSE_PASSWORD, OTEL_EXPORTER_OTLP_ENDPOINT)
 - User-sync Lambda (in this stack to avoid cross-stack Cognito trigger cycle — see ADR 002)
-- ECR repositories (arena-api, arena-frontend)
 
 #### DataStack
 - RDS PostgreSQL 15 (db.t3.micro, private subnets, RETAIN on destroy)
@@ -104,14 +103,11 @@ All three stacks are fully implemented. CDK `cdk synth` passes.
 - CfnOutputs: RDS endpoint, Redis endpoint (used to populate `arena/database-url` manually)
 
 #### ComputeStack
-- ECS Fargate cluster
-- ALB with path-based routing (HTTP listener; HTTPS pending ACM cert)
-- API Fargate service (1 vCPU, 2GB, min 2 / max 4 tasks, CPU auto-scaling at 70%)
-- Frontend Fargate service (0.5 vCPU, 1GB, min 2 tasks)
-- All environment variables wired (secrets via `ecs.Secret.fromSecretsManager`, non-sensitive via `environment`)
 - SQS cleaning queue + DLQ
-- Cleaning Lambda (SQS trigger)
+- Cleaning Lambda (SQS trigger from EventBridge interview-completion events)
 - Reconciliation Lambda (EventBridge schedule, every 15 min)
+
+> App compute (API + Frontend) runs on EC2 via nginx + PM2, not in these stacks. See ADR 004.
 
 ### Deployment prerequisite
 Before `cdk deploy` can work end-to-end, these Secrets Manager values must be set manually
@@ -123,8 +119,7 @@ after the stacks are deployed. See `brain/runbooks/cdk-deploy-checklist.md`.
 
 | File | Trigger | What it does |
 |------|---------|--------------|
-| `ci.yml` | Every push / PR to main | Unit tests, integration tests, frontend tests, Docker builds; pushes to ECR on main |
-| `cd.yml` | After CI passes on main | Runs Prisma migrations, deploys API + Frontend to ECS Fargate, smoke tests |
+| `ci.yml` | Every push / every PR | Unit tests, integration tests, frontend tests |
 | `deploy-dev.yml` | Push to main | SSHes into EC2, git pull, npm install, build, migrate, PM2 restart (appv1) |
 | `deploy-seandev.yml` | Push to main | Same as above for seandev environment |
 | `_deploy-ec2-env.yml` | Reusable (called by above) | Parameterised EC2 deploy logic |
@@ -136,6 +131,5 @@ after the stacks are deployed. See `brain/runbooks/cdk-deploy-checklist.md`.
 ## What Doesn't Exist Yet
 
 - **Audio upload feature** — S3 presigned URL flow. Schema stubs removed. Implement after CDK deploy + S3 bucket confirmed working.
-- **ACM certificate** — ALB HTTPS listener needs a cert for the production domain. Currently HTTP only.
-- **Production deployment** — CDK stacks have never been deployed. See `brain/runbooks/cdk-deploy-checklist.md`.
+- **CDK stacks deployed** — FoundationStack (Cognito, user-sync Lambda) and DataStack (RDS, ElastiCache) have never been deployed. ComputeStack (Lambdas + SQS) likewise. See `brain/runbooks/cdk-deploy-checklist.md`.
 - **Comprehensive frontend tests** — Only smoke tests exist.

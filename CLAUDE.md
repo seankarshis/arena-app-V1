@@ -96,5 +96,5 @@ cd frontend && npm run dev        # Start Next.js
 - **In progress:** (nothing active)
 - **Schema version:** Migrations exist in `api/prisma/migrations/` — run `npx prisma migrate deploy` against a fresh DB
 - **Infrastructure deployed:** EC2 dev environments only (appv1, seandev). CDK stacks coded but never deployed to AWS.
-- **Known gaps:** Audio upload via S3 presigned URLs not implemented (schema stubs removed — see `brain/decisions/003`). ALB HTTPS listener pending ACM cert. Frontend test coverage minimal.
-- **Next work:** First CDK production deploy — follow `brain/runbooks/cdk-deploy-checklist.md`
+- **Known gaps:** Audio upload via S3 presigned URLs not implemented (schema stubs removed — see `brain/decisions/003`). Frontend test coverage minimal.
+- **Next work:** Deploy FoundationStack (Cognito, user-sync Lambda) and DataStack (RDS, ElastiCache) for managed AWS services. Compute stays on EC2/PM2. See `brain/runbooks/cdk-deploy-checklist.md`.
