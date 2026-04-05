@@ -1,76 +1,18 @@
 # Arena — Elastic Horizon Interview Platform
 
-## CRITICAL: Directory Boundary
+## Boundaries
 
-**You are working in the Arena application repository. Your working directory is the repo root.**
-
-- All file paths are relative to this repo root
-- Do NOT attempt to access parent directories (`../`), sibling directories, or any path outside this repo
-- Do NOT read or reference any `.env` files outside this directory
-- Do NOT modify files in any directory you did not create
-- If you need information that isn't in your context or in this repo, say so — do not guess or look elsewhere
+Work only within this repo root. Do not access parent directories or `.env` files outside this directory.
 
 ## Naming Conventions
 
 - **elastichorizon**: The company and brand. Used in UI copyright notices, legal references, and public-facing content.
 - **Arena**: The internal platform codename. Used in code, repo names, internal docs, and infrastructure resource naming.
 
-## Repository Structure
-
-```
-/
-├── CLAUDE.md                  ← This file
-├── .env                       ← Arena platform secrets (never commit)
-├── brain/
-│   ├── specs/                 ← Authoritative build specifications (read-only)
-│   │   ├── interview-spec-v2.md
-│   │   ├── conversation-protocol-spec.md
-│   │   ├── developmentTasks.md
-│   │   └── brandStandards.md
-│   ├── architecture/          ← Living architecture docs (updated as build progresses)
-│   ├── decisions/             ← Architecture Decision Records (append-only)
-│   ├── tasks/                 ← Task specifications
-│   └── runbooks/              ← Operational procedures
-├── infrastructure/            ← AWS CDK stacks
-│   ├── lib/
-│   │   ├── foundation-stack.ts
-│   │   ├── data-stack.ts
-│   │   └── compute-stack.ts
-│   └── bin/app.ts
-├── api/                       ← Fastify + Apollo Server + Prisma
-│   ├── src/
-│   │   ├── server.ts
-│   │   ├── schema/
-│   │   ├── services/
-│   │   ├── middleware/
-│   │   ├── websocket/
-│   │   ├── sse/
-│   │   └── lambda/
-│   ├── prisma/
-│   │   ├── schema.prisma
-│   │   ├── migrations/
-│   │   └── seed.ts
-│   └── vitest.config.ts
-├── frontend/                  ← Next.js + React
-│   └── src/
-│       ├── app/
-│       ├── components/
-│       ├── lib/
-│       └── hooks/
-└── docker-compose.yml         ← Local dev: Postgres + Redis
-```
-
-Note: Many of these directories do not exist yet at the start of the build. They are created by tasks as the build progresses. Only reference files that have been explicitly listed in your task context or that you are creating.
-
 ## Two Authoritative Specifications
 
-This project is defined by two specification documents. Both are authoritative within their domains.
-
-### interview-spec-v2.md
-**Authoritative for:** data model, technology stack, infrastructure (CDK/AWS), GraphQL schema design, admin interface specifications, post-interview cleaning pipeline, observability and error handling, authentication and authorization, local development environment, testing strategy, and performance budgets.
-
-### conversation-protocol-spec.md
-**Authoritative for:** runtime conversation behavior, audio architecture (push-to-talk, per-response segments, progressive upload), SSE streaming (message types, sentence boundary detection), frontend state machine (all states and transitions), pause/resume protocol, inactivity handling (idle timer, heartbeat, auto-pause), WebSocket STT proxy, TTS integration, error recovery during interviews, and interview UI layout.
+- **`brain/specs/interview-spec-v2.md`** — data model, infrastructure, GraphQL schema, admin UI, cleaning pipeline, observability, auth, testing
+- **`brain/specs/conversation-protocol-spec.md`** — runtime conversation behavior, audio architecture, SSE streaming, frontend state machine, interview UI
 
 ### Where They Conflict
 - **interview-spec-v2.md wins** on data model and schema decisions.
