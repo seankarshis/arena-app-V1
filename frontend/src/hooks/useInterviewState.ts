@@ -4,7 +4,6 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, gql } from '@apollo/client';
 import { useSSE, type SSEMessage } from './useSSE';
 import { usePTT } from './usePTT';
-import { audioUploadQueue } from '@/lib/audioUploadQueue';
 import { getIdToken } from '@/lib/auth';
 
 const API_BASE =
@@ -525,13 +524,6 @@ export function useInterviewState(templateId: string): {
     setSession((prev) => ({ ...prev, microphoneError: ptt.microphoneError }));
   }, [ptt.microphoneError]);
 
-  // Sync audioUploadQueue pending count into session for UI progress display
-  useEffect(() => {
-    return audioUploadQueue.subscribe((count) => {
-      setSession((prev) => ({ ...prev, pendingUploadsCount: count }));
-    });
-  }, []);
-
   // When final_transcript arrives from STT, sync to session and start auto-send
   // (auto-send only starts if we're in REVIEW state when the transcript arrives)
   useEffect(() => {
@@ -699,17 +691,6 @@ export function useInterviewState(templateId: string): {
 
       submitResponseMutationRef.current({
         variables: { interviewId: sess.interviewId, rawTranscription: transcript, inputMode },
-      }).then((result) => {
-        const responseId = result.data?.submitResponse.responseId;
-        if (audioBlob && responseId && inputMode === 'voice') {
-          audioUploadQueue.enqueueResponseUpload(
-            sess.interviewId,
-            responseId,
-            audioBlob,
-            audioBlob.type || 'audio/webm',
-            durationSeconds,
-          );
-        }
       }).catch((err: unknown) => {
         const errorMessage = err instanceof Error ? err.message : 'Failed to submit response';
         setSession((prev) => ({ ...prev, errorMessage }));
@@ -946,12 +927,6 @@ export function useInterviewState(templateId: string): {
       await completeInterviewMutation({
         variables: { interviewId: currentSession.interviewId },
       });
-      // Wait up to 60 s for any in-flight audio uploads to finish
-      const allUploaded = await audioUploadQueue.waitForEmpty(60_000);
-      if (!allUploaded) {
-        // Timeout — uploads continue in background; surface a note in session
-        setSession((prev) => ({ ...prev, uploadsPendingOnTimeout: true }));
-      }
       setMachineState('COMPLETED');
     } catch (err) {
       const errorMessage =
@@ -1053,16 +1028,6 @@ export function useInterviewState(templateId: string): {
           inputMode,
         },
       });
-      const responseId = result.data?.submitResponse.responseId;
-      if (audioBlob && responseId && inputMode === 'voice') {
-        audioUploadQueue.enqueueResponseUpload(
-          sess.interviewId,
-          responseId,
-          audioBlob,
-          audioBlob.type || 'audio/webm',
-          durationSeconds,
-        );
-      }
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Failed to submit response';
@@ -1106,17 +1071,6 @@ export function useInterviewState(templateId: string): {
         transcript,
         inputMode: pendingInputModeRef.current,
       },
-    }).then((result) => {
-      const draftId = result.data?.saveDraft.draftId;
-      if (audioBlob && draftId) {
-        audioUploadQueue.enqueueDraftUpload(
-          currentSession.interviewId,
-          draftId,
-          audioBlob,
-          audioBlob.type || 'audio/webm',
-          durationSeconds,
-        );
-      }
     }).catch(() => { /* draft save failure is non-fatal */ });
 
     // Reset PTT state so the next press starts fresh

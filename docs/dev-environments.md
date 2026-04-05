@@ -19,3 +19,11 @@ Each developer environment runs on the shared EC2 with its own subdomain, port r
 5. **Environment file** — create `.env.local` with `DATABASE_URL`, `REDIS_URL`, and the bypass flags for local dev.
 6. **Start processes** — `PORT=<api-port> npm run dev` (API) and `PORT=<frontend-port> npm run dev` (frontend), managed via PM2.
 7. **Save PM2** — `pm2 save` so processes survive reboots.
+
+## Environment Variables
+
+See `api/.env.example` and `frontend/.env.example` for all required and optional
+environment variables with descriptions.
+
+In development, copy these to `api/.env.local` and `frontend/.env.local` and fill in values.
+Production values should be stored in AWS Secrets Manager under the `arena/` prefix.

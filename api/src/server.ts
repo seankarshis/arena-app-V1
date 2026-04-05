@@ -28,6 +28,9 @@ export async function buildServer() {
   });
 
   // --- Plugins ---
+  if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGIN) {
+    throw new Error('CORS_ORIGIN environment variable is required in production');
+  }
   await app.register(cors, {
     origin: process.env.CORS_ORIGIN || true,
     credentials: true,

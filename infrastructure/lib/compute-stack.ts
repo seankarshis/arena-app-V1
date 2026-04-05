@@ -1,6 +1,5 @@
 import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -9,6 +8,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 import { FoundationStack } from './foundation-stack';
 import { DataStack } from './data-stack';
@@ -24,7 +24,6 @@ export interface ComputeStackProps extends cdk.StackProps {
  * reconciliation, SQS queues, and EventBridge rules.
  */
 export class ComputeStack extends cdk.Stack {
-  public readonly vpc: ec2.Vpc;
   public readonly cluster: ecs.Cluster;
   public readonly alb: elbv2.ApplicationLoadBalancer;
   public readonly apiService: ecs.FargateService;
@@ -37,24 +36,18 @@ export class ComputeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
 
-    // ── VPC ────────────────────────────────────────────────────────────
-    // Created here until FoundationStack exposes its own VPC.
-    this.vpc = new ec2.Vpc(this, 'ArenaVpc', {
-      maxAzs: 2,
-      natGateways: 1,
-    });
-
     // ── ECS Cluster ───────────────────────────────────────────────────
     this.cluster = new ecs.Cluster(this, 'ArenaCluster', {
-      vpc: this.vpc,
+      vpc: props.foundationStack.vpc,
       clusterName: 'arena-cluster',
       containerInsightsV2: ecs.ContainerInsights.ENABLED,
     });
 
     // ── Application Load Balancer ─────────────────────────────────────
     this.alb = new elbv2.ApplicationLoadBalancer(this, 'ArenaAlb', {
-      vpc: this.vpc,
+      vpc: props.foundationStack.vpc,
       internetFacing: true,
+      securityGroup: props.foundationStack.albSg,
     });
 
     const listener = this.alb.addListener('HttpListener', {
@@ -79,9 +72,38 @@ export class ComputeStack extends cdk.Stack {
         PORT: '3001',
         HOST: '0.0.0.0',
         NODE_ENV: 'production',
+        AWS_REGION: 'us-east-1',
+        S3_REGION: 'us-east-1',
+        COGNITO_REGION: 'us-east-1',
+        COGNITO_USER_POOL_ID: props.foundationStack.userPool.userPoolId,
+        S3_AUDIO_BUCKET: props.foundationStack.audioBucket.bucketName,
+        EVENT_BUS_NAME: 'arena-event-bus',
         OTEL_SERVICE_NAME: 'arena-api',
-        OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4317',
         OTEL_EXPORTER_OTLP_PROTOCOL: 'grpc',
+        OTEL_CLIENT_INSTALL_ID: 'production',
+        CORS_ORIGIN: `http://${this.alb.loadBalancerDnsName}`,
+        REDIS_URL: `redis://${props.dataStack.redisCluster.attrRedisEndpointAddress}:${props.dataStack.redisCluster.attrRedisEndpointPort}`,
+      },
+      secrets: {
+        CLAUDE_API_KEY: ecs.Secret.fromSecretsManager(props.foundationStack.claudeApiKeySecret),
+        ELEVENLABS_API_KEY: ecs.Secret.fromSecretsManager(
+          props.foundationStack.elevenlabsApiKeySecret,
+        ),
+        DATABASE_URL: ecs.Secret.fromSecretsManager(props.foundationStack.databaseUrlSecret),
+        LOG_HASH_SALT: ecs.Secret.fromSecretsManager(props.foundationStack.logHashSaltSecret),
+        // arena/clickhouse-credentials is a JSON secret with these keys:
+        CLICKHOUSE_USER: ecs.Secret.fromSecretsManager(
+          props.foundationStack.clickhouseCredentialsSecret,
+          'CLICKHOUSE_USER',
+        ),
+        CLICKHOUSE_PASSWORD: ecs.Secret.fromSecretsManager(
+          props.foundationStack.clickhouseCredentialsSecret,
+          'CLICKHOUSE_PASSWORD',
+        ),
+        OTEL_EXPORTER_OTLP_ENDPOINT: ecs.Secret.fromSecretsManager(
+          props.foundationStack.clickhouseCredentialsSecret,
+          'OTEL_EXPORTER_OTLP_ENDPOINT',
+        ),
       },
       healthCheck: {
         command: ['CMD-SHELL', 'wget -qO- http://localhost:3001/health || exit 1'],
@@ -98,6 +120,7 @@ export class ComputeStack extends cdk.Stack {
       desiredCount: 2,
       minHealthyPercent: 100,
       maxHealthyPercent: 200,
+      securityGroups: [props.foundationStack.ecsSg],
     });
 
     const apiScaling = this.apiService.autoScaleTaskCount({
@@ -107,6 +130,22 @@ export class ComputeStack extends cdk.Stack {
     apiScaling.scaleOnCpuUtilization('ApiCpuScaling', {
       targetUtilizationPercent: 70,
     });
+
+    // ── API Task Role — IAM grants ────────────────────────────────────
+    props.foundationStack.claudeApiKeySecret.grantRead(apiTaskDef.taskRole);
+    props.foundationStack.elevenlabsApiKeySecret.grantRead(apiTaskDef.taskRole);
+    props.foundationStack.databaseUrlSecret.grantRead(apiTaskDef.taskRole);
+    props.foundationStack.logHashSaltSecret.grantRead(apiTaskDef.taskRole);
+    props.foundationStack.clickhouseCredentialsSecret.grantRead(apiTaskDef.taskRole);
+    props.foundationStack.audioBucket.grantReadWrite(apiTaskDef.taskRole);
+    apiTaskDef.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['events:PutEvents'],
+        resources: [
+          `arn:aws:events:us-east-1:${this.account}:event-bus/arena-event-bus`,
+        ],
+      }),
+    );
 
     // ── Frontend Fargate Service ──────────────────────────────────────
     // Spec: 0.5 vCPU, 1GB, min 2 tasks
@@ -127,6 +166,12 @@ export class ComputeStack extends cdk.Stack {
         PORT: '3001',
         HOSTNAME: '0.0.0.0',
         NEXT_TELEMETRY_DISABLED: '1',
+        NEXT_PUBLIC_GRAPHQL_URL: `http://${this.alb.loadBalancerDnsName}/graphql`,
+        NEXT_PUBLIC_API_URL: `http://${this.alb.loadBalancerDnsName}`,
+        NEXT_PUBLIC_STT_WS_URL: `ws://${this.alb.loadBalancerDnsName}/stt`,
+        NEXT_PUBLIC_COGNITO_USER_POOL_ID: props.foundationStack.userPool.userPoolId,
+        NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID:
+          props.foundationStack.userPoolClient.userPoolClientId,
       },
       healthCheck: {
         command: ['CMD-SHELL', 'wget -qO- http://localhost:3001/api/health || exit 1'],
@@ -143,6 +188,7 @@ export class ComputeStack extends cdk.Stack {
       desiredCount: 2,
       minHealthyPercent: 100,
       maxHealthyPercent: 200,
+      securityGroups: [props.foundationStack.ecsSg],
     });
 
     // ── ALB Path-Based Routing ────────────────────────────────────────

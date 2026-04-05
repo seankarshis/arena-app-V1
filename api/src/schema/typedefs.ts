@@ -294,11 +294,6 @@ export const typeDefs = `#graphql
     draftId: ID!
   }
 
-  type AudioUploadUrlPayload {
-    uploadUrl: String!
-    s3Key: String!
-  }
-
   type ConfirmAudioUploadPayload {
     success: Boolean!
   }
@@ -467,15 +462,6 @@ export const typeDefs = `#graphql
     pauseInterview(interviewId: ID!): Interview!
     resumeInterview(interviewId: ID!): Interview!
 
-    # --- Audio operations ---
-    requestResponseAudioUploadUrl(
-      interviewId: ID!
-      responseId: ID!
-    ): AudioUploadUrlPayload!
-    requestDraftAudioUploadUrl(
-      interviewId: ID!
-      draftId: ID!
-    ): AudioUploadUrlPayload!
     confirmAudioUpload(
       responseId: ID!
       s3Key: String!

@@ -988,24 +988,6 @@ export const resolvers = {
       return ctx.prisma.interview.findUnique({ where: { id: result.id } });
     },
 
-    // --- Audio operation stubs ---
-
-    async requestResponseAudioUploadUrl(
-      _parent: unknown,
-      _args: { interviewId: string; responseId: string },
-      _ctx: ArenaContext,
-    ) {
-      throw internalError('Audio operations not yet implemented');
-    },
-
-    async requestDraftAudioUploadUrl(
-      _parent: unknown,
-      _args: { interviewId: string; draftId: string },
-      _ctx: ArenaContext,
-    ) {
-      throw internalError('Audio operations not yet implemented');
-    },
-
     async confirmAudioUpload(
       _parent: unknown,
       args: {

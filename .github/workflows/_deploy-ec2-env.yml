@@ -1,0 +1,53 @@
+name: Deploy EC2 Environment (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      app_path:
+        required: true
+        type: string
+        description: "Absolute path to the app directory on EC2"
+      api_pm2_name:
+        required: true
+        type: string
+        description: "PM2 process name for the API"
+      frontend_pm2_name:
+        required: true
+        type: string
+        description: "PM2 process name for the frontend"
+    secrets:
+      EC2_SSH_KEY:
+        required: true
+      EC2_HOST:
+        required: true
+      EC2_USERNAME:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+          APP_PATH: ${{ inputs.app_path }}
+          API_PM2_NAME: ${{ inputs.api_pm2_name }}
+          FRONTEND_PM2_NAME: ${{ inputs.frontend_pm2_name }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa "$EC2_USERNAME@$EC2_HOST" \
+            "cd $APP_PATH && git pull && \
+             cd api && npm install && \
+             cd ../frontend && npm install && npm run build && \
+             cd .. && \
+             cd api && set -a && source ../.env.local && set +a && npx prisma migrate deploy && \
+             cd .. && \
+             pm2 restart $API_PM2_NAME && pm2 restart $FRONTEND_PM2_NAME && \
+             pm2 save"
+          rm -f ~/.ssh/id_rsa

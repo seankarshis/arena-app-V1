@@ -1,4 +1,4 @@
-name: Deploy — appv1
+name: Deploy — seandev
 
 on:
   push:
@@ -8,9 +8,9 @@ jobs:
   deploy:
     uses: ./.github/workflows/_deploy-ec2-env.yml
     with:
-      app_path: /home/ubuntu/arena-app/app-v1
-      api_pm2_name: arena-api
-      frontend_pm2_name: arena-frontend
+      app_path: /home/ubuntu/arena-app/seandev
+      api_pm2_name: seandev-api
+      frontend_pm2_name: seandev-frontend
     secrets:
       EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
       EC2_HOST: ${{ secrets.EC2_HOST }}

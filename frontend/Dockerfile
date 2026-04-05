@@ -17,9 +17,6 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Ensure standalone output mode is configured
-RUN printf '/** @type {import("next").NextConfig} */\nconst nextConfig = { output: "standalone" };\nmodule.exports = nextConfig;\n' > next.config.js
-
 # Ensure public dir exists so COPY in runner stage never fails
 RUN mkdir -p public
 
