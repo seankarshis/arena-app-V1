@@ -34,6 +34,12 @@ const MAX_UNFIXED_HIGH_FINDINGS = 3;
 // Maximum tokens to request from Claude for synthesis
 const CLAUDE_MAX_TOKENS = 3000;
 
+// Maximum input validation constraints
+const MAX_PR_TITLE_LENGTH = 500;
+const MAX_PR_AUTHOR_LENGTH = 256;
+const MAX_REPOSITORY_NAME_LENGTH = 256;
+const MAX_FINDINGS_PER_REPORT = 1000;
+
 // ---------------------------------------------------------------------------
 // Input / output types
 // ---------------------------------------------------------------------------
@@ -63,6 +69,69 @@ interface SynthesisResponse {
     by_agent: Record<string, { status: string; findings: number; fixes: number }>;
     total_token_usage: { input_tokens: number; output_tokens: number };
   };
+}
+
+// ---------------------------------------------------------------------------
+// Input validation
+// ---------------------------------------------------------------------------
+
+function validateSynthesisRequest(event: unknown): SynthesisRequest {
+  const req = event as Record<string, unknown>;
+
+  // Validate required fields
+  if (typeof req.pr_number !== 'number' || req.pr_number < 0) {
+    throw new Error('Invalid pr_number: must be a non-negative number');
+  }
+
+  if (typeof req.pr_title !== 'string' || req.pr_title.length === 0 || req.pr_title.length > MAX_PR_TITLE_LENGTH) {
+    throw new Error(`Invalid pr_title: must be a non-empty string up to ${MAX_PR_TITLE_LENGTH} characters`);
+  }
+
+  if (typeof req.pr_author !== 'string' || req.pr_author.length === 0 || req.pr_author.length > MAX_PR_AUTHOR_LENGTH) {
+    throw new Error(`Invalid pr_author: must be a non-empty string up to ${MAX_PR_AUTHOR_LENGTH} characters`);
+  }
+
+  if (typeof req.pr_url !== 'string' || !isValidUrl(req.pr_url)) {
+    throw new Error('Invalid pr_url: must be a valid URL');
+  }
+
+  if (typeof req.repository !== 'string' || req.repository.length === 0 || req.repository.length > MAX_REPOSITORY_NAME_LENGTH) {
+    throw new Error(`Invalid repository: must be a non-empty string up to ${MAX_REPOSITORY_NAME_LENGTH} characters`);
+  }
+
+  if (!Array.isArray(req.agent_reports)) {
+    throw new Error('Invalid agent_reports: must be an array');
+  }
+
+  // Validate agent reports structure and enforce limits
+  for (const report of req.agent_reports) {
+    if (!report || typeof report !== 'object') {
+      throw new Error('Invalid agent_reports: contains non-object element');
+    }
+    if (Array.isArray((report as Record<string, unknown>).findings) && (report as Record<string, unknown>).findings.length > MAX_FINDINGS_PER_REPORT) {
+      throw new Error(`Invalid report: findings count exceeds maximum of ${MAX_FINDINGS_PER_REPORT}`);
+    }
+  }
+
+  if (typeof req.blast_radius_stats !== 'object' || req.blast_radius_stats === null) {
+    throw new Error('Invalid blast_radius_stats: must be an object');
+  }
+
+  const stats = req.blast_radius_stats as Record<string, unknown>;
+  if (typeof stats.changed_count !== 'number' || typeof stats.total_scope !== 'number') {
+    throw new Error('Invalid blast_radius_stats: must contain changed_count and total_scope numbers');
+  }
+
+  return req as SynthesisRequest;
+}
+
+function isValidUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +213,15 @@ function statusEmoji(status: string): string {
   return '⚠️';
 }
 
+function sanitizeForPrompt(input: string, maxLength: number = 200): string {
+  // Remove potential prompt injection characters and limit length
+  return input
+    .substring(0, maxLength)
+    .replace(/[\n\r`]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function findRelatedTicket(
   finding: { file: string; message: string },
   createdTickets: CreatedTicket[],
@@ -168,6 +246,11 @@ function buildUserMessage(
   overallStatus: 'pass' | 'fail',
   createdTickets: CreatedTicket[],
 ): string {
+  // Sanitize user inputs to prevent prompt injection
+  const sanitizedTitle = sanitizeForPrompt(event.pr_title, MAX_PR_TITLE_LENGTH);
+  const sanitizedAuthor = sanitizeForPrompt(event.pr_author, MAX_PR_AUTHOR_LENGTH);
+  const sanitizedRepository = sanitizeForPrompt(event.repository, MAX_REPOSITORY_NAME_LENGTH);
+
   // Build a concise per-agent summary
   const agentLines = EXPECTED_AGENTS.map((agentName) => {
     const report = reportMap.get(agentName);
@@ -213,9 +296,9 @@ function buildUserMessage(
   return `## Synthesis Request
 
 **Overall Status:** ${overallStatus.toUpperCase()}
-**PR #${event.pr_number}:** ${event.pr_title}
-**Author:** ${event.pr_author}
-**Repository:** ${event.repository}
+**PR #${event.pr_number}:** ${sanitizedTitle}
+**Author:** ${sanitizedAuthor}
+**Repository:** ${sanitizedRepository}
 **PR URL:** ${event.pr_url}
 
 ## Blast Radius
@@ -238,33 +321,42 @@ Generate the PR comment markdown for this pipeline run.`;
 // Handler
 // ---------------------------------------------------------------------------
 
-export const handler = async (event: SynthesisRequest): Promise<SynthesisResponse> => {
+export const handler = async (event: unknown): Promise<SynthesisResponse> => {
+  let synthesisRequest: SynthesisRequest;
+
+  try {
+    synthesisRequest = validateSynthesisRequest(event);
+  } catch (err) {
+    console.error('[synthesis] Input validation failed:', err instanceof Error ? err.message : String(err));
+    throw new Error('Invalid synthesis request: validation failed');
+  }
+
   const reportMap = new Map<string, AgentReport>(
-    event.agent_reports.map((r) => [r.agent, r]),
+    synthesisRequest.agent_reports.map((r) => [r.agent, r]),
   );
 
-  const overallStatus = determineOverallStatus(event.agent_reports, reportMap);
+  const overallStatus = determineOverallStatus(synthesisRequest.agent_reports, reportMap);
 
   // Create Linear tickets for all unfixed critical/high/medium findings.
   // This happens even for passing PRs when there are ≤3 unfixed high findings.
   let createdTickets: CreatedTicket[] = [];
   const prContext: PRContext = {
-    pr_number: event.pr_number,
-    pr_title: event.pr_title,
-    pr_author: event.pr_author,
-    pr_url: event.pr_url,
+    pr_number: synthesisRequest.pr_number,
+    pr_title: synthesisRequest.pr_title,
+    pr_author: synthesisRequest.pr_author,
+    pr_url: synthesisRequest.pr_url,
   };
 
   try {
     const linearClient = new LinearClient();
-    createdTickets = await linearClient.createTickets(event.agent_reports, prContext);
+    createdTickets = await linearClient.createTickets(synthesisRequest.agent_reports, prContext);
   } catch (err) {
     // Linear being down must not fail the synthesis — CI still needs a comment
-    console.error('[synthesis] Linear ticket creation failed:', err);
+    console.error('[synthesis] Linear ticket creation failed:', err instanceof Error ? err.message : 'Unknown error');
   }
 
   // Call Claude to generate the PR comment
-  const userMessage = buildUserMessage(event, reportMap, overallStatus, createdTickets);
+  const userMessage = buildUserMessage(synthesisRequest, reportMap, overallStatus, createdTickets);
   let prComment: string;
   let inputTokens: number;
   let outputTokens: number;
@@ -275,11 +367,11 @@ export const handler = async (event: SynthesisRequest): Promise<SynthesisRespons
     inputTokens = result.inputTokens;
     outputTokens = result.outputTokens;
   } catch (err) {
-    console.error('[synthesis] Claude synthesis failed:', err);
+    console.error('[synthesis] Claude synthesis failed:', err instanceof Error ? err.message : 'Unknown error');
     throw err;
   }
 
-  const summary = computeSummary(event.agent_reports, inputTokens, outputTokens);
+  const summary = computeSummary(synthesisRequest.agent_reports, inputTokens, outputTokens);
 
   return {
     overall_status: overallStatus,

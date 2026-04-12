@@ -1,9 +1,9 @@
 import {
+  AccessDeniedException,
   BedrockRuntimeClient,
   ConverseCommand,
   ThrottlingException,
   ValidationException,
-  AccessDeniedException,
 } from '@aws-sdk/client-bedrock-runtime';
 
 // Claude Haiku 4.5 on Bedrock (US cross-region inference profile).
@@ -12,11 +12,18 @@ const MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
 const DEFAULT_MAX_TOKENS = 4096;
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
+const ALLOWED_REGIONS = ['us-east-1', 'us-east-2', 'us-west-2', 'eu-west-1'];
+const DEFAULT_REGION = 'us-east-2';
 
 // Bedrock authenticates via the Lambda execution role — no API key needed.
 // AWS_REGION is automatically available in the Lambda environment.
+const region = process.env.AWS_REGION ?? DEFAULT_REGION;
+if (!ALLOWED_REGIONS.includes(region)) {
+  console.warn(`[llm-client] AWS_REGION '${region}' not in allowed list, using default: ${DEFAULT_REGION}`);
+}
+
 const client = new BedrockRuntimeClient({
-  region: process.env.AWS_REGION ?? 'us-east-2',
+  region: ALLOWED_REGIONS.includes(region) ? region : DEFAULT_REGION,
 });
 
 export async function callLLM(
@@ -51,7 +58,7 @@ export async function callLLM(
 
       // Extract text from the first text content block in the response message.
       const content = response.output?.message?.content ?? [];
-      const textBlock = content.find((b) => 'text' in b);
+      const textBlock = content.find((block) => 'text' in block);
       if (!textBlock || !('text' in textBlock)) {
         throw new Error('No text content block in Bedrock Converse response');
       }
@@ -87,7 +94,8 @@ function isNonRetryable(err: Error): boolean {
   // Permissions error — retrying won't help
   if (err instanceof AccessDeniedException) return true;
   // Fall back to HTTP status code on the error metadata envelope
-  const status = (err as any).$metadata?.httpStatusCode as number | undefined;
+  const metadata = err as Record<string, unknown>;
+  const status = (metadata.$metadata as Record<string, unknown>)?.httpStatusCode as number | undefined;
   if (status === undefined) return false;
   return status >= 400 && status < 500 && status !== 429;
 }
