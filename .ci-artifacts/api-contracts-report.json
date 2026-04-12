@@ -1,0 +1,23 @@
+{
+  "agent": "agent-api-contracts",
+  "status": "pass",
+  "timestamp": "2026-04-12T17:56:01.064Z",
+  "files_analyzed": [
+    "infrastructure/lambdas/agent-api-contracts/handler.ts",
+    "infrastructure/lambdas/agent-documentation/handler.ts",
+    "infrastructure/lambdas/agent-linting/handler.ts",
+    "infrastructure/lambdas/agent-security/handler.ts",
+    "infrastructure/lambdas/agent-speed/handler.ts",
+    "infrastructure/lambdas/agent-synthesis/handler.ts",
+    "infrastructure/lambdas/agent-unit-tests/handler.ts",
+    "infrastructure/lambdas/shared/claude-client.ts",
+    "infrastructure/lambdas/shared/llm-client.ts"
+  ],
+  "files_modified": [],
+  "findings": [],
+  "summary": "No API contract violations found.",
+  "token_usage": {
+    "input_tokens": 67223,
+    "output_tokens": 353
+  }
+}

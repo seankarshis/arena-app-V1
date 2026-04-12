@@ -1,0 +1,30 @@
+{
+  "agent": "agent-documentation",
+  "status": "pass",
+  "timestamp": "2026-04-12T17:55:39.966Z",
+  "files_analyzed": [
+    "infrastructure/lambdas/agent-api-contracts/handler.ts",
+    "infrastructure/lambdas/agent-documentation/handler.ts",
+    "infrastructure/lambdas/agent-linting/handler.ts",
+    "infrastructure/lambdas/agent-security/handler.ts",
+    "infrastructure/lambdas/agent-speed/handler.ts",
+    "infrastructure/lambdas/agent-synthesis/handler.ts",
+    "infrastructure/lambdas/agent-unit-tests/handler.ts",
+    "infrastructure/lambdas/shared/claude-client.ts",
+    "infrastructure/lambdas/shared/llm-client.ts"
+  ],
+  "files_modified": [
+    "infrastructure/lambdas/agent-api-contracts/handler.ts",
+    "infrastructure/lambdas/agent-documentation/handler.ts",
+    "infrastructure/lambdas/agent-linting/handler.ts",
+    "infrastructure/lambdas/agent-security/handler.ts",
+    "infrastructure/lambdas/agent-speed/handler.ts"
+  ],
+  "findings": [],
+  "summary": "Added documentation to 5 file(s). 0 finding(s) reported.",
+  "token_usage": {
+    "input_tokens": 65786,
+    "output_tokens": 8192
+  },
+  "commit_sha": "6527f4968dbafbb16fd2abafd9b44bfca698ad9c"
+}
