@@ -1,0 +1,34 @@
+{
+  "changed_files": [
+    "infrastructure/lambdas/shared/llm-client.ts"
+  ],
+  "downstream_dependencies": [],
+  "upstream_dependents": [
+    "infrastructure/lambdas/agent-api-contracts/handler.ts",
+    "infrastructure/lambdas/agent-documentation/handler.ts",
+    "infrastructure/lambdas/agent-linting/handler.ts",
+    "infrastructure/lambdas/agent-security/handler.ts",
+    "infrastructure/lambdas/agent-speed/handler.ts",
+    "infrastructure/lambdas/agent-synthesis/handler.ts",
+    "infrastructure/lambdas/agent-unit-tests/handler.ts",
+    "infrastructure/lambdas/shared/claude-client.ts"
+  ],
+  "full_scope": [
+    "infrastructure/lambdas/agent-api-contracts/handler.ts",
+    "infrastructure/lambdas/agent-documentation/handler.ts",
+    "infrastructure/lambdas/agent-linting/handler.ts",
+    "infrastructure/lambdas/agent-security/handler.ts",
+    "infrastructure/lambdas/agent-speed/handler.ts",
+    "infrastructure/lambdas/agent-synthesis/handler.ts",
+    "infrastructure/lambdas/agent-unit-tests/handler.ts",
+    "infrastructure/lambdas/shared/claude-client.ts",
+    "infrastructure/lambdas/shared/llm-client.ts"
+  ],
+  "stats": {
+    "changed_count": 1,
+    "downstream_count": 0,
+    "upstream_count": 8,
+    "total_scope": 9,
+    "total_repo_files": 104
+  }
+}

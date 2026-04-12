@@ -4,6 +4,37 @@ import { SYSTEM_PROMPT } from './prompt';
 import { LinearClient, CreatedTicket, PRContext } from './linear-client';
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const EXPECTED_AGENTS = [
+  'agent-linting',
+  'agent-security',
+  'agent-speed',
+  'agent-unit-tests',
+  'agent-documentation',
+  'agent-api-contracts',
+] as const;
+
+const AGENT_DISPLAY: Record<string, string> = {
+  'agent-linting': 'Linting',
+  'agent-security': 'Security',
+  'agent-speed': 'Speed',
+  'agent-unit-tests': 'Unit Tests',
+  'agent-documentation': 'Documentation',
+  'agent-api-contracts': 'API Contracts',
+};
+
+// Unit tests and documentation never auto-fix in the traditional sense
+const AUTO_FIX_AGENTS = new Set(['agent-unit-tests', 'agent-documentation']);
+
+// Maximum unfixed high-severity findings before PR fails
+const MAX_UNFIXED_HIGH_FINDINGS = 3;
+
+// Maximum tokens to request from Claude for synthesis
+const CLAUDE_MAX_TOKENS = 3000;
+
+// ---------------------------------------------------------------------------
 // Input / output types
 // ---------------------------------------------------------------------------
 
@@ -35,31 +66,6 @@ interface SynthesisResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const EXPECTED_AGENTS = [
-  'agent-linting',
-  'agent-security',
-  'agent-speed',
-  'agent-unit-tests',
-  'agent-documentation',
-  'agent-api-contracts',
-] as const;
-
-const AGENT_DISPLAY: Record<string, string> = {
-  'agent-linting': 'Linting',
-  'agent-security': 'Security',
-  'agent-speed': 'Speed',
-  'agent-unit-tests': 'Unit Tests',
-  'agent-documentation': 'Documentation',
-  'agent-api-contracts': 'API Contracts',
-};
-
-// Unit tests and documentation never auto-fix in the traditional sense
-const AUTO_FIX_DASH_AGENTS = new Set(['agent-unit-tests', 'agent-documentation']);
-
-// ---------------------------------------------------------------------------
 // Pass / fail logic (deterministic — no Claude required)
 // ---------------------------------------------------------------------------
 
@@ -81,9 +87,9 @@ function determineOverallStatus(
   // Any unfixed critical → fail
   if (unfixed.some((f) => f.severity === 'critical')) return 'fail';
 
-  // More than 3 unfixed high → fail
+  // More than MAX_UNFIXED_HIGH_FINDINGS unfixed high → fail
   const unfixedHighCount = unfixed.filter((f) => f.severity === 'high').length;
-  if (unfixedHighCount > 3) return 'fail';
+  if (unfixedHighCount > MAX_UNFIXED_HIGH_FINDINGS) return 'fail';
 
   return 'pass';
 }
@@ -99,10 +105,10 @@ function computeSummary(
 ): SynthesisResponse['summary'] {
   const allFindings = reports.flatMap((r) => r.findings);
 
-  const bySeverity: Record<string, number> = {};
-  for (const f of allFindings) {
-    bySeverity[f.severity] = (bySeverity[f.severity] ?? 0) + 1;
-  }
+  const bySeverity = allFindings.reduce<Record<string, number>>((acc, finding) => {
+    acc[finding.severity] = (acc[finding.severity] ?? 0) + 1;
+    return acc;
+  }, {});
 
   let totalInput = synthInputTokens;
   let totalOutput = synthOutputTokens;
@@ -129,7 +135,7 @@ function computeSummary(
 }
 
 // ---------------------------------------------------------------------------
-// Claude user message builder
+// Utility functions for user message building
 // ---------------------------------------------------------------------------
 
 function statusEmoji(status: string): string {
@@ -137,6 +143,24 @@ function statusEmoji(status: string): string {
   if (status === 'fail') return '❌';
   return '⚠️';
 }
+
+function findRelatedTicket(
+  finding: { file: string; message: string },
+  createdTickets: CreatedTicket[],
+): CreatedTicket | undefined {
+  const fileName = finding.file.split('/').pop() ?? '';
+  const messagePreview = finding.message.slice(0, 40);
+
+  return createdTickets.find(
+    (ticket) =>
+      ticket.title.toLowerCase().includes(fileName.toLowerCase()) ||
+      ticket.title.toLowerCase().includes(messagePreview.toLowerCase()),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Claude user message builder
+// ---------------------------------------------------------------------------
 
 function buildUserMessage(
   event: SynthesisRequest,
@@ -155,7 +179,7 @@ function buildUserMessage(
 
     const unfixed = report.findings.filter((f) => !f.fixed);
     const fixedCount = report.findings.filter((f) => f.fixed).length;
-    const useDash = AUTO_FIX_DASH_AGENTS.has(agentName);
+    const useDash = AUTO_FIX_AGENTS.has(agentName);
 
     const lines = [
       `**${display}:** ${statusEmoji(report.status)} ${report.status.toUpperCase()} | ` +
@@ -163,17 +187,11 @@ function buildUserMessage(
     ];
 
     if (unfixed.length > 0) {
-      for (const f of unfixed) {
-        const loc = f.line ? `${f.file}:${f.line}` : f.file;
-        // Find if there's a created ticket for this finding
-        // (ticket titles contain the file name or finding message as a substring)
-        const ticket = createdTickets.find(
-          (t) =>
-            t.title.toLowerCase().includes(f.file.split('/').pop()?.toLowerCase() ?? '') ||
-            t.title.toLowerCase().includes(f.message.slice(0, 40).toLowerCase()),
-        );
-        const ticketRef = ticket ? ` [${ticket.identifier}](${ticket.url})` : '';
-        lines.push(`  - [${f.severity.toUpperCase()}] \`${loc}\` — ${f.message}${ticketRef}`);
+      for (const finding of unfixed) {
+        const location = finding.line ? `${finding.file}:${finding.line}` : finding.file;
+        const relatedTicket = findRelatedTicket(finding, createdTickets);
+        const ticketRef = relatedTicket ? ` [${relatedTicket.identifier}](${relatedTicket.url})` : '';
+        lines.push(`  - [${finding.severity.toUpperCase()}] \`${location}\` — ${finding.message}${ticketRef}`);
       }
     } else {
       lines.push(`  Summary: ${report.summary}`);
@@ -247,11 +265,19 @@ export const handler = async (event: SynthesisRequest): Promise<SynthesisRespons
 
   // Call Claude to generate the PR comment
   const userMessage = buildUserMessage(event, reportMap, overallStatus, createdTickets);
-  const { text: prComment, inputTokens, outputTokens } = await callClaude(
-    SYSTEM_PROMPT,
-    userMessage,
-    3000,
-  );
+  let prComment: string;
+  let inputTokens: number;
+  let outputTokens: number;
+
+  try {
+    const result = await callClaude(SYSTEM_PROMPT, userMessage, CLAUDE_MAX_TOKENS);
+    prComment = result.text;
+    inputTokens = result.inputTokens;
+    outputTokens = result.outputTokens;
+  } catch (err) {
+    console.error('[synthesis] Claude synthesis failed:', err);
+    throw err;
+  }
 
   const summary = computeSummary(event.agent_reports, inputTokens, outputTokens);
 
