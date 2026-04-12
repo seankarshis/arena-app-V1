@@ -1,39 +1,53 @@
 import { AgentRequest, AgentResponse, AgentReport, Finding } from '../shared/types';
-import { callClaude } from '../shared/llm-client';
-import { formatFileForReview, parseClaudeCodeResponse } from '../shared/git-operations';
+import { callClaude, ResponseTruncatedError } from '../shared/llm-client';
+import {
+  formatFileForReview,
+  parseClaudeCodeResponse,
+  rejectionToFinding,
+  truncationToFinding,
+  parseFindingsErrorToFinding,
+} from '../shared/git-operations';
 import { SYSTEM_PROMPT } from './prompt';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseFindings(text: string): Finding[] {
+type FindingsParseResult =
+  | { status: 'parsed'; findings: Finding[] }
+  | { status: 'error'; detail: string };
+
+function parseFindings(text: string): FindingsParseResult {
   const jsonBlockMatch = text.match(/```json\s*\n([\s\S]*?)\n?\s*```/);
   if (jsonBlockMatch) {
     try {
       const parsed = JSON.parse(jsonBlockMatch[1]);
-      if (Array.isArray(parsed)) return parsed as Finding[];
-    } catch {
-      // fall through
+      if (Array.isArray(parsed)) return { status: 'parsed', findings: parsed as Finding[] };
+      return { status: 'error', detail: 'json block did not contain an array' };
+    } catch (err) {
+      return { status: 'error', detail: `json block parse error: ${(err as Error).message}` };
     }
   }
   const arrayMatch = text.match(/\[\s*\{[\s\S]*?"severity"[\s\S]*?\}\s*\]/);
   if (arrayMatch) {
     try {
-      return JSON.parse(arrayMatch[0]) as Finding[];
-    } catch {
-      // ignore
+      return { status: 'parsed', findings: JSON.parse(arrayMatch[0]) as Finding[] };
+    } catch (err) {
+      return { status: 'error', detail: `fallback array parse error: ${(err as Error).message}` };
     }
   }
-  return [];
+  return { status: 'parsed', findings: [] };
 }
 
 /**
- * Documentation agent status: capped at "warn".
- * Missing docs is informational — it should never block a PR.
+ * Documentation agent status: capped at "warn" for normal findings.
+ * Missing docs is informational — it should never block a PR. However,
+ * synthetic critical findings from the parser/truncation gates DO block,
+ * because they indicate a real safety problem with the output.
  */
-function determineStatus(findings: Finding[]): 'pass' | 'warn' {
+function determineStatus(findings: Finding[]): 'pass' | 'fail' | 'warn' {
   const unfixed = findings.filter((f) => !f.fixed);
+  if (unfixed.some((f) => f.severity === 'critical')) return 'fail';
   if (unfixed.length > 0) return 'warn';
   return 'pass';
 }
@@ -45,9 +59,8 @@ function determineStatus(findings: Finding[]): 'pass' | 'warn' {
 /**
  * Agent 5 — Documentation
  *
- * Sends all files in a single Claude call. Documentation often requires
- * understanding the relationships between functions across a file, so a
- * single-call approach gives Claude the full picture.
+ * Retains auto-apply under the parser gates. Comment/docblock edits are the
+ * lowest-risk auto-apply category because they can't change runtime behavior.
  */
 export const handler = async (event: AgentRequest): Promise<AgentResponse> => {
   const fileSections = Object.entries(event.files)
@@ -61,22 +74,38 @@ export const handler = async (event: AgentRequest): Promise<AgentResponse> => {
 
   const userMessage = `## Files to Document\n\n${fileSections}${previousReportSection}`;
 
-  const { text, inputTokens, outputTokens } = await callClaude(
-    SYSTEM_PROMPT,
-    userMessage,
-    8192, // Documentation can add significant volume to each file
-  );
-
-  const codeBlocks = parseClaudeCodeResponse(text);
-  const findings = parseFindings(text);
-
+  const findings: Finding[] = [];
   const fixedFiles: Record<string, string> = {};
-  for (const block of codeBlocks) {
-    const originalPath = Object.keys(event.files).find(
-      (fp) => fp === block.filepath || fp.endsWith(block.filepath),
-    );
-    if (originalPath && block.content.trim() !== event.files[originalPath].trim()) {
-      fixedFiles[originalPath] = block.content;
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  try {
+    const result = await callClaude(SYSTEM_PROMPT, userMessage, 8192);
+    inputTokens = result.inputTokens;
+    outputTokens = result.outputTokens;
+
+    const { blocks, rejections } = parseClaudeCodeResponse(result.text, event.files);
+    for (const r of rejections) findings.push(rejectionToFinding(r));
+
+    const parsed = parseFindings(result.text);
+    if (parsed.status === 'error') {
+      findings.push(parseFindingsErrorToFinding(parsed.detail));
+    } else {
+      findings.push(...parsed.findings);
+    }
+
+    for (const block of blocks) {
+      const original = event.files[block.filepath];
+      if (original !== undefined && block.content.trim() !== original.trim()) {
+        fixedFiles[block.filepath] = block.content;
+      }
+    }
+  } catch (err) {
+    if (err instanceof ResponseTruncatedError) {
+      findings.push(truncationToFinding(Object.keys(event.files), err.message));
+      outputTokens = err.outputTokens;
+    } else {
+      throw err;
     }
   }
 

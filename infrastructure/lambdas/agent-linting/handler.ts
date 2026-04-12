@@ -1,33 +1,43 @@
 import { AgentRequest, AgentResponse, AgentReport, Finding } from '../shared/types';
-import { callClaude } from '../shared/llm-client';
-import { formatFileForReview, parseClaudeCodeResponse } from '../shared/git-operations';
+import { callClaude, ResponseTruncatedError } from '../shared/llm-client';
+import {
+  formatFileForReview,
+  parseClaudeCodeResponse,
+  rejectionToFinding,
+  truncationToFinding,
+  parseFindingsErrorToFinding,
+} from '../shared/git-operations';
 import { SYSTEM_PROMPT } from './prompt';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseFindings(text: string): Finding[] {
-  // Prefer a ```json block
+type FindingsParseResult =
+  | { status: 'parsed'; findings: Finding[] }
+  | { status: 'error'; detail: string };
+
+function parseFindings(text: string): FindingsParseResult {
   const jsonBlockMatch = text.match(/```json\s*\n([\s\S]*?)\n?\s*```/);
   if (jsonBlockMatch) {
     try {
       const parsed = JSON.parse(jsonBlockMatch[1]);
-      if (Array.isArray(parsed)) return parsed as Finding[];
-    } catch {
-      // fall through
+      if (Array.isArray(parsed)) return { status: 'parsed', findings: parsed as Finding[] };
+      return { status: 'error', detail: 'json block did not contain an array' };
+    } catch (err) {
+      return { status: 'error', detail: `json block parse error: ${(err as Error).message}` };
     }
   }
-  // Fallback: find any JSON array containing a "severity" key
   const arrayMatch = text.match(/\[\s*\{[\s\S]*?"severity"[\s\S]*?\}\s*\]/);
   if (arrayMatch) {
     try {
-      return JSON.parse(arrayMatch[0]) as Finding[];
-    } catch {
-      // ignore
+      return { status: 'parsed', findings: JSON.parse(arrayMatch[0]) as Finding[] };
+    } catch (err) {
+      return { status: 'error', detail: `fallback array parse error: ${(err as Error).message}` };
     }
   }
-  return [];
+  // No findings block at all is legitimate — empty findings.
+  return { status: 'parsed', findings: [] };
 }
 
 function determineStatus(findings: Finding[]): 'pass' | 'fail' | 'warn' {
@@ -55,36 +65,70 @@ export const handler = async (event: AgentRequest): Promise<AgentResponse> => {
   const allFindings: Finding[] = [];
   const fixedFiles: Record<string, string> = {};
 
-  // Process each file independently, in parallel
   const results = await Promise.all(
     filesEntries.map(async ([filepath, content]) => {
       const formatted = formatFileForReview(filepath, content);
       const userMessage = `Please review and fix the following TypeScript file:\n\n${formatted}`;
 
-      const { text, inputTokens, outputTokens } = await callClaude(
-        SYSTEM_PROMPT,
-        userMessage,
-      );
+      try {
+        const { text, inputTokens, outputTokens } = await callClaude(
+          SYSTEM_PROMPT,
+          userMessage,
+        );
 
-      const codeBlocks = parseClaudeCodeResponse(text);
-      const findings = parseFindings(text);
+        const { blocks, rejections } = parseClaudeCodeResponse(text, { [filepath]: content });
+        const findingsResult = parseFindings(text);
 
-      return { filepath, content, codeBlocks, findings, inputTokens, outputTokens };
+        return {
+          filepath,
+          content,
+          blocks,
+          rejections,
+          findingsResult,
+          inputTokens,
+          outputTokens,
+          truncationDetail: null as string | null,
+        };
+      } catch (err) {
+        if (err instanceof ResponseTruncatedError) {
+          return {
+            filepath,
+            content,
+            blocks: [],
+            rejections: [],
+            findingsResult: { status: 'parsed', findings: [] } as FindingsParseResult,
+            inputTokens: 0,
+            outputTokens: err.outputTokens,
+            truncationDetail: err.message,
+          };
+        }
+        throw err;
+      }
     }),
   );
 
-  for (const { filepath, content, codeBlocks, findings, inputTokens, outputTokens } of results) {
-    totalInputTokens += inputTokens;
-    totalOutputTokens += outputTokens;
-    allFindings.push(...findings);
+  for (const res of results) {
+    totalInputTokens += res.inputTokens;
+    totalOutputTokens += res.outputTokens;
 
-    // Collect fixed file contents — use the block whose filepath matches
-    for (const block of codeBlocks) {
-      // Accept exact match or trailing-segment match (e.g., Claude may strip path prefix)
-      if (block.filepath === filepath || filepath.endsWith(block.filepath)) {
-        if (block.content.trim() !== content.trim()) {
-          fixedFiles[filepath] = block.content;
-        }
+    if (res.truncationDetail) {
+      allFindings.push(truncationToFinding([res.filepath], res.truncationDetail));
+      continue;
+    }
+
+    for (const r of res.rejections) {
+      allFindings.push(rejectionToFinding(r));
+    }
+
+    if (res.findingsResult.status === 'error') {
+      allFindings.push(parseFindingsErrorToFinding(res.findingsResult.detail));
+    } else {
+      allFindings.push(...res.findingsResult.findings);
+    }
+
+    for (const block of res.blocks) {
+      if (block.content.trim() !== res.content.trim()) {
+        fixedFiles[block.filepath] = block.content;
       }
     }
   }

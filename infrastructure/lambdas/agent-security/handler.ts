@@ -1,31 +1,42 @@
 import { AgentRequest, AgentResponse, AgentReport, Finding } from '../shared/types';
-import { callClaude } from '../shared/llm-client';
-import { formatFileForReview, parseClaudeCodeResponse } from '../shared/git-operations';
+import { callClaude, ResponseTruncatedError } from '../shared/llm-client';
+import {
+  formatFileForReview,
+  parseClaudeCodeResponse,
+  rejectionToFinding,
+  truncationToFinding,
+  parseFindingsErrorToFinding,
+} from '../shared/git-operations';
 import { SYSTEM_PROMPT } from './prompt';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseFindings(text: string): Finding[] {
+type FindingsParseResult =
+  | { status: 'parsed'; findings: Finding[] }
+  | { status: 'error'; detail: string };
+
+function parseFindings(text: string): FindingsParseResult {
   const jsonBlockMatch = text.match(/```json\s*\n([\s\S]*?)\n?\s*```/);
   if (jsonBlockMatch) {
     try {
       const parsed = JSON.parse(jsonBlockMatch[1]);
-      if (Array.isArray(parsed)) return parsed as Finding[];
-    } catch {
-      // fall through
+      if (Array.isArray(parsed)) return { status: 'parsed', findings: parsed as Finding[] };
+      return { status: 'error', detail: 'json block did not contain an array' };
+    } catch (err) {
+      return { status: 'error', detail: `json block parse error: ${(err as Error).message}` };
     }
   }
   const arrayMatch = text.match(/\[\s*\{[\s\S]*?"severity"[\s\S]*?\}\s*\]/);
   if (arrayMatch) {
     try {
-      return JSON.parse(arrayMatch[0]) as Finding[];
-    } catch {
-      // ignore
+      return { status: 'parsed', findings: JSON.parse(arrayMatch[0]) as Finding[] };
+    } catch (err) {
+      return { status: 'error', detail: `fallback array parse error: ${(err as Error).message}` };
     }
   }
-  return [];
+  return { status: 'parsed', findings: [] };
 }
 
 function determineStatus(findings: Finding[]): 'pass' | 'fail' | 'warn' {
@@ -42,13 +53,12 @@ function determineStatus(findings: Finding[]): 'pass' | 'fail' | 'warn' {
 /**
  * Agent 2 — Security
  *
- * Receives Bearer CLI SAST results via additional_context.bearer_report.
- * Sends all files plus Bearer output to Claude in a single call for full context.
+ * Comment-only mode: findings are reported but fixed_files is always empty.
+ * Security changes are too load-bearing to auto-apply; humans review every fix.
  */
 export const handler = async (event: AgentRequest): Promise<AgentResponse> => {
   const bearerReport = event.additional_context?.bearer_report;
 
-  // Build a single user message that combines all file contents + Bearer output
   const fileSections = Object.entries(event.files)
     .map(([filepath, content]) => formatFileForReview(filepath, content))
     .join('\n\n---\n\n');
@@ -67,51 +77,54 @@ export const handler = async (event: AgentRequest): Promise<AgentResponse> => {
     bearerSection +
     previousReportSection;
 
-  const { text, inputTokens, outputTokens } = await callClaude(
-    SYSTEM_PROMPT,
-    userMessage,
-    8192, // Security analysis benefits from a larger output budget
-  );
+  const findings: Finding[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
 
-  const codeBlocks = parseClaudeCodeResponse(text);
-  const findings = parseFindings(text);
+  try {
+    const result = await callClaude(SYSTEM_PROMPT, userMessage, 8192);
+    inputTokens = result.inputTokens;
+    outputTokens = result.outputTokens;
 
-  // Map fixed file content back to original filepaths
-  const fixedFiles: Record<string, string> = {};
-  for (const block of codeBlocks) {
-    const originalPath = Object.keys(event.files).find(
-      (fp) => fp === block.filepath || fp.endsWith(block.filepath),
-    );
-    if (originalPath && block.content.trim() !== event.files[originalPath].trim()) {
-      fixedFiles[originalPath] = block.content;
+    const { rejections } = parseClaudeCodeResponse(result.text, event.files);
+    for (const r of rejections) findings.push(rejectionToFinding(r));
+
+    const parsed = parseFindings(result.text);
+    if (parsed.status === 'error') {
+      findings.push(parseFindingsErrorToFinding(parsed.detail));
+    } else {
+      findings.push(...parsed.findings);
+    }
+  } catch (err) {
+    if (err instanceof ResponseTruncatedError) {
+      findings.push(truncationToFinding(Object.keys(event.files), err.message));
+      outputTokens = err.outputTokens;
+    } else {
+      throw err;
     }
   }
-
-  const filesModified = Object.keys(fixedFiles);
 
   const report: AgentReport = {
     agent: 'agent-security',
     status: determineStatus(findings),
     timestamp: new Date().toISOString(),
     files_analyzed: Object.keys(event.files),
-    files_modified: filesModified,
+    files_modified: [],
     findings,
-    summary: buildSummary(findings, filesModified),
+    summary: buildSummary(findings),
     token_usage: { input_tokens: inputTokens, output_tokens: outputTokens },
   };
 
-  return { report, fixed_files: fixedFiles };
+  // Comment-only mode: never auto-apply security fixes.
+  return { report, fixed_files: {} };
 };
 
-function buildSummary(findings: Finding[], filesModified: string[]): string {
+function buildSummary(findings: Finding[]): string {
   if (findings.length === 0) return 'No security issues found.';
   const critical = findings.filter((f) => f.severity === 'critical').length;
   const high = findings.filter((f) => f.severity === 'high').length;
-  const fixed = findings.filter((f) => f.fixed).length;
-  const unfixed = findings.filter((f) => !f.fixed).length;
   const parts: string[] = [`Found ${findings.length} security finding(s)`];
-  if (critical > 0) parts.push(`(${critical} critical, ${high} high)`);
-  if (fixed > 0) parts.push(`— fixed ${fixed} in ${filesModified.length} file(s)`);
-  if (unfixed > 0) parts.push(`— ${unfixed} require human review`);
+  if (critical > 0 || high > 0) parts.push(`(${critical} critical, ${high} high)`);
+  parts.push('— comment-only, no auto-fix');
   return parts.join(' ') + '.';
 }
