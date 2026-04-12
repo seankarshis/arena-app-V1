@@ -1,0 +1,24 @@
+{
+  "agent": "agent-speed",
+  "status": "pass",
+  "timestamp": "2026-04-12T17:53:52.568Z",
+  "files_analyzed": [
+    "infrastructure/lambdas/agent-api-contracts/handler.ts",
+    "infrastructure/lambdas/agent-documentation/handler.ts",
+    "infrastructure/lambdas/agent-linting/handler.ts",
+    "infrastructure/lambdas/agent-security/handler.ts",
+    "infrastructure/lambdas/agent-speed/handler.ts",
+    "infrastructure/lambdas/agent-synthesis/handler.ts",
+    "infrastructure/lambdas/agent-unit-tests/handler.ts",
+    "infrastructure/lambdas/shared/claude-client.ts",
+    "infrastructure/lambdas/shared/llm-client.ts"
+  ],
+  "files_modified": [],
+  "findings": [],
+  "summary": "No performance issues found.",
+  "token_usage": {
+    "input_tokens": 65133,
+    "output_tokens": 4096
+  },
+  "commit_sha": "85b33d93504e56cd22804a1792de1d8091a4c773"
+}
