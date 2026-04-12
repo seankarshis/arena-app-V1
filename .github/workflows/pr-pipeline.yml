@@ -19,7 +19,7 @@ concurrency:
 
 env:
   NODE_VERSION: '20'
-  AWS_REGION: us-east-1
+  AWS_REGION: us-east-2
 
 permissions:
   id-token: write       # OIDC token for AWS credential federation
