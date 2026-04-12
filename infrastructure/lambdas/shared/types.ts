@@ -1,23 +1,23 @@
 export interface AgentRequest {
   agent: string;
-  files: Record<string, string>;           // filepath → file contents
-  blast_radius: string[];                   // list of all files in scope
-  previous_reports: AgentReport[];          // reports from agents that ran before this one
-  additional_context?: Record<string, any>; // e.g., Bearer report for security agent
+  files: Record<string, string>;
+  blastRadius: string[];
+  previousReports: AgentReport[];
+  additionalContext?: Record<string, unknown>;
 }
 
 export interface AgentReport {
   agent: string;
   status: 'pass' | 'fail' | 'warn';
   timestamp: string;
-  files_analyzed: string[];
-  files_modified: string[];
+  filesAnalyzed: string[];
+  filesModified: string[];
   findings: Finding[];
   summary: string;
-  commit_sha?: string;
-  token_usage: {
-    input_tokens: number;
-    output_tokens: number;
+  commitSha?: string;
+  tokenUsage: {
+    inputTokens: number;
+    outputTokens: number;
   };
 }
 
@@ -27,10 +27,10 @@ export interface Finding {
   line?: number;
   message: string;
   fixed: boolean;
-  fix_description?: string;
+  fixDescription?: string;
 }
 
 export interface AgentResponse {
   report: AgentReport;
-  fixed_files: Record<string, string>; // filepath → updated file contents
+  fixedFiles: Record<string, string>;
 }

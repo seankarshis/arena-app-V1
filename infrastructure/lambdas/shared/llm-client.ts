@@ -44,7 +44,10 @@ export class ResponseTruncatedError extends Error {
 // AWS_REGION is automatically available in the Lambda environment.
 const region = process.env.AWS_REGION ?? DEFAULT_REGION;
 if (!ALLOWED_REGIONS.includes(region)) {
-  console.warn(`[llm-client] AWS_REGION '${region}' not in allowed list, using default: ${DEFAULT_REGION}`);
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[llm-client] AWS_REGION '${region}' not in allowed list, using default: ${DEFAULT_REGION}`,
+  );
 }
 
 const client = new BedrockRuntimeClient({
@@ -61,10 +64,12 @@ export async function callLLM(
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     if (attempt > 0) {
       const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      // eslint-disable-next-line no-await-in-loop
       await sleep(delay);
     }
 
     try {
+      // eslint-disable-next-line no-await-in-loop
       const response = await client.send(
         new ConverseCommand({
           modelId: MODEL_ID,
@@ -132,11 +137,15 @@ function isNonRetryable(err: Error): boolean {
   if (err instanceof ResponseTruncatedError) return true;
   // Fall back to HTTP status code on the error metadata envelope
   const metadata = err as unknown as Record<string, unknown>;
-  const status = (metadata.$metadata as Record<string, unknown>)?.httpStatusCode as number | undefined;
+  const status = (metadata.$metadata as Record<string, unknown>)?.httpStatusCode as
+    | number
+    | undefined;
   if (status === undefined) return false;
   return status >= 400 && status < 500 && status !== 429;
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
