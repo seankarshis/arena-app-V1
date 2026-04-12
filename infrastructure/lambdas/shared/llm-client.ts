@@ -94,7 +94,7 @@ function isNonRetryable(err: Error): boolean {
   // Permissions error — retrying won't help
   if (err instanceof AccessDeniedException) return true;
   // Fall back to HTTP status code on the error metadata envelope
-  const metadata = err as Record<string, unknown>;
+  const metadata = err as unknown as Record<string, unknown>;
   const status = (metadata.$metadata as Record<string, unknown>)?.httpStatusCode as number | undefined;
   if (status === undefined) return false;
   return status >= 400 && status < 500 && status !== 429;

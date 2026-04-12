@@ -108,7 +108,8 @@ function validateSynthesisRequest(event: unknown): SynthesisRequest {
     if (!report || typeof report !== 'object') {
       throw new Error('Invalid agent_reports: contains non-object element');
     }
-    if (Array.isArray((report as Record<string, unknown>).findings) && (report as Record<string, unknown>).findings.length > MAX_FINDINGS_PER_REPORT) {
+    const findings = (report as Record<string, unknown>).findings;
+    if (Array.isArray(findings) && findings.length > MAX_FINDINGS_PER_REPORT) {
       throw new Error(`Invalid report: findings count exceeds maximum of ${MAX_FINDINGS_PER_REPORT}`);
     }
   }
@@ -122,7 +123,7 @@ function validateSynthesisRequest(event: unknown): SynthesisRequest {
     throw new Error('Invalid blast_radius_stats: must contain changed_count and total_scope numbers');
   }
 
-  return req as SynthesisRequest;
+  return req as unknown as SynthesisRequest;
 }
 
 function isValidUrl(url: string): boolean {
@@ -132,6 +133,26 @@ function isValidUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Report normalization — guarantees arrays/objects exist before any access.
+// Without this, an agent that returned `findings: undefined` (or no token_usage)
+// would crash flatMap/reduce downstream.
+// ---------------------------------------------------------------------------
+
+function normalizeReport(report: AgentReport): AgentReport {
+  return {
+    ...report,
+    findings: Array.isArray(report?.findings) ? report.findings.filter(Boolean) : [],
+    files_analyzed: Array.isArray(report?.files_analyzed) ? report.files_analyzed : [],
+    files_modified: Array.isArray(report?.files_modified) ? report.files_modified : [],
+    token_usage: {
+      input_tokens: report?.token_usage?.input_tokens ?? 0,
+      output_tokens: report?.token_usage?.output_tokens ?? 0,
+    },
+    summary: report?.summary ?? '',
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -331,11 +352,13 @@ export const handler = async (event: unknown): Promise<SynthesisResponse> => {
     throw new Error('Invalid synthesis request: validation failed');
   }
 
-  const reportMap = new Map<string, AgentReport>(
-    synthesisRequest.agent_reports.map((r) => [r.agent, r]),
-  );
+  const reports: AgentReport[] = Array.isArray(synthesisRequest.agent_reports)
+    ? synthesisRequest.agent_reports.filter(Boolean).map(normalizeReport)
+    : [];
 
-  const overallStatus = determineOverallStatus(synthesisRequest.agent_reports, reportMap);
+  const reportMap = new Map<string, AgentReport>(reports.map((r) => [r.agent, r]));
+
+  const overallStatus = determineOverallStatus(reports, reportMap);
 
   // Create Linear tickets for all unfixed critical/high/medium findings.
   // This happens even for passing PRs when there are ≤3 unfixed high findings.
@@ -349,14 +372,15 @@ export const handler = async (event: unknown): Promise<SynthesisResponse> => {
 
   try {
     const linearClient = new LinearClient();
-    createdTickets = await linearClient.createTickets(synthesisRequest.agent_reports, prContext);
+    createdTickets = await linearClient.createTickets(reports, prContext);
   } catch (err) {
     // Linear being down must not fail the synthesis — CI still needs a comment
     console.error('[synthesis] Linear ticket creation failed:', err instanceof Error ? err.message : 'Unknown error');
   }
 
   // Call Claude to generate the PR comment
-  const userMessage = buildUserMessage(synthesisRequest, reportMap, overallStatus, createdTickets);
+  const normalizedEvent: SynthesisRequest = { ...synthesisRequest, agent_reports: reports };
+  const userMessage = buildUserMessage(normalizedEvent, reportMap, overallStatus, createdTickets);
   let prComment: string;
   let inputTokens: number;
   let outputTokens: number;
@@ -371,7 +395,7 @@ export const handler = async (event: unknown): Promise<SynthesisResponse> => {
     throw err;
   }
 
-  const summary = computeSummary(synthesisRequest.agent_reports, inputTokens, outputTokens);
+  const summary = computeSummary(reports, inputTokens, outputTokens);
 
   return {
     overall_status: overallStatus,

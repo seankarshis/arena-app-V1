@@ -159,8 +159,9 @@ export function groupFindings(reports: AgentReport[]): TicketGroup[] {
   const groupMap = new Map<string, TicketGroup>();
 
   for (const report of reports) {
-    for (const finding of report.findings) {
-      if (finding.fixed || !TICKETABLE_SEVERITIES.has(finding.severity)) continue;
+    const findings = Array.isArray(report?.findings) ? report.findings : [];
+    for (const finding of findings) {
+      if (!finding || finding.fixed || !TICKETABLE_SEVERITIES.has(finding.severity)) continue;
 
       const key = `${report.agent}::${finding.file}`;
       if (!groupMap.has(key)) {
