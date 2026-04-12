@@ -1,31 +1,42 @@
 import { AgentRequest, AgentResponse, AgentReport, Finding } from '../shared/types';
-import { callClaude } from '../shared/llm-client';
-import { formatFileForReview, parseClaudeCodeResponse } from '../shared/git-operations';
+import { callClaude, ResponseTruncatedError } from '../shared/llm-client';
+import {
+  formatFileForReview,
+  parseClaudeCodeResponse,
+  rejectionToFinding,
+  truncationToFinding,
+  parseFindingsErrorToFinding,
+} from '../shared/git-operations';
 import { SYSTEM_PROMPT } from './prompt';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseFindings(text: string): Finding[] {
+type FindingsParseResult =
+  | { status: 'parsed'; findings: Finding[] }
+  | { status: 'error'; detail: string };
+
+function parseFindings(text: string): FindingsParseResult {
   const jsonBlockMatch = text.match(/```json\s*\n([\s\S]*?)\n?\s*```/);
   if (jsonBlockMatch) {
     try {
       const parsed = JSON.parse(jsonBlockMatch[1]);
-      if (Array.isArray(parsed)) return parsed as Finding[];
-    } catch {
-      // fall through
+      if (Array.isArray(parsed)) return { status: 'parsed', findings: parsed as Finding[] };
+      return { status: 'error', detail: 'json block did not contain an array' };
+    } catch (err) {
+      return { status: 'error', detail: `json block parse error: ${(err as Error).message}` };
     }
   }
   const arrayMatch = text.match(/\[\s*\{[\s\S]*?"severity"[\s\S]*?\}\s*\]/);
   if (arrayMatch) {
     try {
-      return JSON.parse(arrayMatch[0]) as Finding[];
-    } catch {
-      // ignore
+      return { status: 'parsed', findings: JSON.parse(arrayMatch[0]) as Finding[] };
+    } catch (err) {
+      return { status: 'error', detail: `fallback array parse error: ${(err as Error).message}` };
     }
   }
-  return [];
+  return { status: 'parsed', findings: [] };
 }
 
 function determineStatus(findings: Finding[]): 'pass' | 'fail' | 'warn' {
@@ -42,8 +53,7 @@ function determineStatus(findings: Finding[]): 'pass' | 'fail' | 'warn' {
 /**
  * Agent 3 — Speed Optimization
  *
- * Sends all files in a single Claude call so it can spot cross-file patterns
- * (e.g., N+1 queries that span a resolver and a repository layer).
+ * Comment-only mode: performance rewrites need human review before shipping.
  */
 export const handler = async (event: AgentRequest): Promise<AgentResponse> => {
   const fileSections = Object.entries(event.files)
@@ -57,43 +67,49 @@ export const handler = async (event: AgentRequest): Promise<AgentResponse> => {
 
   const userMessage = `## Files to Review\n\n${fileSections}${previousReportSection}`;
 
-  const { text, inputTokens, outputTokens } = await callClaude(SYSTEM_PROMPT, userMessage);
+  const findings: Finding[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
 
-  const codeBlocks = parseClaudeCodeResponse(text);
-  const findings = parseFindings(text);
+  try {
+    const result = await callClaude(SYSTEM_PROMPT, userMessage);
+    inputTokens = result.inputTokens;
+    outputTokens = result.outputTokens;
 
-  const fixedFiles: Record<string, string> = {};
-  for (const block of codeBlocks) {
-    const originalPath = Object.keys(event.files).find(
-      (fp) => fp === block.filepath || fp.endsWith(block.filepath),
-    );
-    if (originalPath && block.content.trim() !== event.files[originalPath].trim()) {
-      fixedFiles[originalPath] = block.content;
+    const { rejections } = parseClaudeCodeResponse(result.text, event.files);
+    for (const r of rejections) findings.push(rejectionToFinding(r));
+
+    const parsed = parseFindings(result.text);
+    if (parsed.status === 'error') {
+      findings.push(parseFindingsErrorToFinding(parsed.detail));
+    } else {
+      findings.push(...parsed.findings);
+    }
+  } catch (err) {
+    if (err instanceof ResponseTruncatedError) {
+      findings.push(truncationToFinding(Object.keys(event.files), err.message));
+      outputTokens = err.outputTokens;
+    } else {
+      throw err;
     }
   }
-
-  const filesModified = Object.keys(fixedFiles);
 
   const report: AgentReport = {
     agent: 'agent-speed',
     status: determineStatus(findings),
     timestamp: new Date().toISOString(),
     files_analyzed: Object.keys(event.files),
-    files_modified: filesModified,
+    files_modified: [],
     findings,
-    summary: buildSummary(findings, filesModified),
+    summary: buildSummary(findings),
     token_usage: { input_tokens: inputTokens, output_tokens: outputTokens },
   };
 
-  return { report, fixed_files: fixedFiles };
+  // Comment-only mode: never auto-apply performance rewrites.
+  return { report, fixed_files: {} };
 };
 
-function buildSummary(findings: Finding[], filesModified: string[]): string {
+function buildSummary(findings: Finding[]): string {
   if (findings.length === 0) return 'No performance issues found.';
-  const fixed = findings.filter((f) => f.fixed).length;
-  const needsHuman = findings.filter((f) => !f.fixed).length;
-  const parts: string[] = [`Found ${findings.length} performance issue(s).`];
-  if (fixed > 0) parts.push(`Auto-fixed ${fixed} in ${filesModified.length} file(s).`);
-  if (needsHuman > 0) parts.push(`${needsHuman} flagged for human review.`);
-  return parts.join(' ');
+  return `Found ${findings.length} performance issue(s) — comment-only, no auto-fix.`;
 }

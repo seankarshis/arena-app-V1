@@ -1,16 +1,16 @@
 {
   "name": "arena-lambda-agents",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "AI-powered CI/CD agent Lambda functions",
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.0.0",
-    "@linear/sdk": "^27.0.0"
+    "@linear/sdk": "^27.0.0",
+    "typescript": "^5.4.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.140",
-    "@types/node": "^20.0.0",
-    "typescript": "^5.4.0"
+    "@types/node": "^20.0.0"
   },
   "scripts": {
     "build": "tsc",

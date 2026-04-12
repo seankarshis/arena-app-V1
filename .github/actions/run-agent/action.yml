@@ -226,14 +226,21 @@ runs:
 
         echo "Lambda invocation successful"
 
-    # ── 8 & 9. Extract fixed files and write them to disk ──
+    # ── 8 & 9. Extract fixed files, enforce allowlist/denylist, write to disk ──
+    #    Gate structure:
+    #      1. Allowlist  — filepath must be in blast-radius.json `full_scope`
+    #      2. Denylist   — filepath must NOT match sensitive patterns
+    #      3. Traversal  — filepath must resolve inside the repo root
+    #    Any rejection fails the step (exit 1) so a misbehaving agent cannot
+    #    silently land out-of-scope writes. Accepted paths are persisted to
+    #    .ci-artifacts/written-paths.txt for the commit step to `git add`.
     - name: Apply file fixes
       shell: bash
       env:
         AGENT_NAME: ${{ inputs.agent-name }}
       run: |
         python3 << 'PYEOF'
-        import json, os, sys
+        import json, os, re, sys
 
         agent_name = os.environ['AGENT_NAME']
 
@@ -244,33 +251,101 @@ runs:
             print(f'ERROR: Lambda returned error: {response.get("errorMessage")}', file=sys.stderr)
             sys.exit(1)
 
+        # ── Load blast-radius allowlist ───────────────────────────────────────
+        blast = json.load(open('.ci-artifacts/blast-radius.json'))
+        allowlist = set(blast.get('full_scope', []))
+
+        # ── Hard denylist (applied regardless of allowlist) ──────────────────
+        DENYLIST_PATTERNS = [
+            r'^\.github/',
+            r'^api/prisma/migrations/',
+            r'(^|/)package(-lock)?\.json$',
+            r'\.lock$',
+            r'(^|/)\.env',
+            r'\.sql$',
+        ]
+        deny_re = re.compile('|'.join(DENYLIST_PATTERNS))
+
         fixed_files: dict = response.get('fixed_files', {})
+        repo_root = os.path.realpath(os.getcwd())
+
+        written_paths: list[str] = []
+        rejected: list[tuple[str, str]] = []
+
+        # Unit-tests agent is the only auto-applier that creates NEW files.
+        # For all other agents, fixed_files should only contain paths already
+        # in the allowlist. New test files from agent-unit-tests are allowed
+        # if they live inside the blast radius directory tree.
+        allow_new_test_files = agent_name == 'agent-unit-tests'
+
+        def is_test_path(p: str) -> bool:
+            return '.test.' in p or '.spec.' in p or '__tests__/' in p
+
+        def is_under_allowlist_tree(p: str) -> bool:
+            # Allow if any allowlist file lives in the same directory or deeper
+            p_dir = os.path.dirname(p)
+            if not p_dir:
+                return False
+            for allowed in allowlist:
+                if allowed.startswith(p_dir + '/') or os.path.dirname(allowed) == p_dir:
+                    return True
+            return False
+
         if not fixed_files:
             print('No file fixes returned by Lambda')
         else:
             print(f'Applying {len(fixed_files)} file fix(es):')
             for filepath, content in fixed_files.items():
-                # Resolve relative to repo root and refuse path traversal
-                abs_path = os.path.realpath(os.path.abspath(filepath))
-                repo_root = os.path.realpath(os.getcwd())
-                if not abs_path.startswith(repo_root):
-                    print(f'  SKIP (path traversal): {filepath}', file=sys.stderr)
+                # Gate 1: allowlist (with carve-out for new test files)
+                if filepath not in allowlist:
+                    if allow_new_test_files and is_test_path(filepath) and is_under_allowlist_tree(filepath):
+                        pass  # new test file inside a scoped directory — allowed
+                    else:
+                        rejected.append((filepath, 'not_in_blast_radius'))
+                        continue
+
+                # Gate 2: denylist
+                if deny_re.search(filepath):
+                    rejected.append((filepath, 'denylisted'))
                     continue
+
+                # Gate 3: path traversal
+                abs_path = os.path.realpath(os.path.abspath(filepath))
+                if not abs_path.startswith(repo_root + os.sep) and abs_path != repo_root:
+                    rejected.append((filepath, 'path_traversal'))
+                    continue
+
                 os.makedirs(os.path.dirname(abs_path), exist_ok=True)
                 with open(abs_path, 'w', encoding='utf-8') as f:
                     f.write(content)
+                written_paths.append(filepath)
                 print(f'  wrote: {filepath}')
 
-        # Save the report to the artifacts staging directory
+        # ── Persist written paths for the commit step ────────────────────────
         os.makedirs('.ci-artifacts', exist_ok=True)
+        with open('.ci-artifacts/written-paths.txt', 'w', encoding='utf-8') as f:
+            for p in written_paths:
+                f.write(p + '\n')
+
+        # ── Save the report ──────────────────────────────────────────────────
         report = response.get('report', {})
         report_path = f'.ci-artifacts/{agent_name}-report.json'
         with open(report_path, 'w') as f:
             json.dump(report, f, indent=2)
         print(f'Report saved to {report_path}')
+
+        # ── Fail loud on any rejections ──────────────────────────────────────
+        if rejected:
+            print(f'::error::Agent {agent_name} attempted writes outside allowed scope:', file=sys.stderr)
+            for fp, why in rejected:
+                print(f'  {fp}: {why}', file=sys.stderr)
+            sys.exit(1)
         PYEOF
 
     # ── 10. Commit and push fixes (only if there are staged changes) ──
+    #    Stages the exact paths listed in .ci-artifacts/written-paths.txt —
+    #    never `git add -A`, which would pick up junk files in the working
+    #    tree. Fails the step if any unexpected paths are staged afterward.
     - name: Commit and push fixes
       shell: bash
       env:
@@ -279,20 +354,36 @@ runs:
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-        # Stage all changes (the agent may have fixed multiple files)
-        git add -A
+        WRITTEN_PATHS_FILE=".ci-artifacts/written-paths.txt"
 
-        # Check if there is actually anything to commit
-        if git diff --staged --quiet; then
+        if [[ ! -s "$WRITTEN_PATHS_FILE" ]]; then
           echo "No file changes to commit for $AGENT_NAME"
-        else
-          # Extract the summary from the Lambda report for the commit message
-          SUMMARY=$(jq -r '.report.summary // "auto-fix"' response.json 2>/dev/null | head -c 120)
-          git commit -m "[$AGENT_NAME] $SUMMARY"
-          git push
-          # Record the commit SHA back into the report on disk
-          COMMIT_SHA=$(git rev-parse HEAD)
-          python3 -c "
+          exit 0
+        fi
+
+        # Stage exactly the paths the Apply step wrote — nothing else.
+        xargs -a "$WRITTEN_PATHS_FILE" -d '\n' git add --
+
+        # Defensive check: `git status --porcelain` should only show modified
+        # or added entries for the files we just staged. Anything else means
+        # the agent touched files it shouldn't have.
+        UNEXPECTED=$(git status --porcelain | grep -vE '^(M |A )' || true)
+        if [[ -n "$UNEXPECTED" ]]; then
+          echo "::error::Unexpected files in working tree after agent run:"
+          echo "$UNEXPECTED"
+          exit 1
+        fi
+
+        if git diff --staged --quiet; then
+          echo "Staged paths contained no effective changes for $AGENT_NAME"
+          exit 0
+        fi
+
+        SUMMARY=$(jq -r '.report.summary // "auto-fix"' response.json 2>/dev/null | head -c 120)
+        git commit -m "[$AGENT_NAME] $SUMMARY"
+        git push
+        COMMIT_SHA=$(git rev-parse HEAD)
+        python3 -c "
         import json, sys
         path = '.ci-artifacts/$AGENT_NAME-report.json'
         try:
@@ -301,9 +392,8 @@ runs:
             json.dump(report, open(path, 'w'), indent=2)
         except Exception as e:
             print(f'WARN: could not patch commit_sha into report: {e}', file=sys.stderr)
-          "
-          echo "Committed and pushed fixes: $COMMIT_SHA"
-        fi
+        "
+        echo "Committed and pushed fixes: $COMMIT_SHA"
 
     # ── 11. Upload agent report as an artifact for downstream jobs ──
     - name: Upload agent report artifact

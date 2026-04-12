@@ -90,26 +90,191 @@ export function formatFileForReview(
   return `// filepath: ${filepath}\n${numbered.join('\n')}`;
 }
 
+import * as ts from 'typescript';
+import { Finding } from './types';
+
 export interface ParsedCodeBlock {
   filepath: string;
   content: string;
 }
 
+export type RejectionReason =
+  | 'unknown_path'
+  | 'drastic_shrink'
+  | 'invalid_syntax'
+  | 'imports_lost'
+  | 'exports_lost';
+
+export interface ParseRejection {
+  filepath: string;
+  reason: RejectionReason;
+  detail: string;
+}
+
+export interface ParseResult {
+  blocks: ParsedCodeBlock[];
+  rejections: ParseRejection[];
+}
+
+export interface ParseOptions {
+  /**
+   * Allow blocks whose filepath is not an exact key in originalFiles to be
+   * accepted as *new* files. Used by the unit-tests agent, which creates
+   * brand-new test files. When true, unknown-path blocks still receive the
+   * syntax check but skip the shrink / import-export gates (no original to
+   * compare against).
+   */
+  allowNewFiles?: boolean;
+}
+
+const SHRINK_FLOOR_LINES = 30;
+const SHRINK_RATIO_THRESHOLD = 0.75;
+const MAX_IMPORT_SOURCE_SHRINK = 1;
+
 /**
- * Extract code blocks and their associated file paths from a Claude response.
- *
- * Handles two tagging conventions emitted by agents:
- *   1. Fenced block with filepath comment header:
- *        ```typescript
- *        // filepath: src/foo.ts
- *        ...code...
- *        ```
- *   2. Tagged fence directly:
- *        ```filepath: src/foo.ts
- *        ...code...
- *        ```
+ * Convert a ParseRejection into a critical Finding. Handlers push the result
+ * into their findings list so determineStatus returns 'fail' and synthesis
+ * marks the overall run as failed.
  */
-export function parseClaudeCodeResponse(response: string): ParsedCodeBlock[] {
+export function rejectionToFinding(r: ParseRejection): Finding {
+  return {
+    severity: 'critical',
+    file: r.filepath,
+    message: `Agent output rejected by ${r.reason} gate: ${r.detail}`,
+    fixed: false,
+  };
+}
+
+/**
+ * Build the critical finding emitted when Bedrock truncates the response.
+ * Used by every handler's callClaude catch block.
+ */
+export function truncationToFinding(files: string[], detail: string): Finding {
+  return {
+    severity: 'critical',
+    file: files[0] ?? '<unknown>',
+    message: `Agent LLM response truncated before completion: ${detail}`,
+    fixed: false,
+  };
+}
+
+/**
+ * Build the critical finding emitted when parseFindings could not decode the
+ * agent's structured JSON. A silent empty array used to be indistinguishable
+ * from "no findings".
+ */
+export function parseFindingsErrorToFinding(detail: string): Finding {
+  return {
+    severity: 'critical',
+    file: '<agent-output>',
+    message: `Agent findings JSON could not be parsed: ${detail}`,
+    fixed: false,
+  };
+}
+
+/**
+ * Extract code blocks from a Claude response and validate each one against
+ * the original file it claims to replace.
+ *
+ * Four gates reject bad output *before* it reaches disk:
+ *   1. unknown_path  — block filepath is not an exact key in originalFiles
+ *   2. drastic_shrink — fixed/original < 0.75 (for files ≥ 30 lines)
+ *   3. invalid_syntax — ts.createSourceFile reports parseDiagnostics
+ *   4. imports_lost / exports_lost — top-level import source set shrinks
+ *      by more than one, or any exported name disappears
+ *
+ * Rejected blocks are dropped from `blocks` and recorded in `rejections` so
+ * the agent handler can convert them into critical findings.
+ */
+export function parseClaudeCodeResponse(
+  response: string,
+  originalFiles: Record<string, string>,
+  options: ParseOptions = {},
+): ParseResult {
+  const rawBlocks = extractRawBlocks(response);
+
+  const blocks: ParsedCodeBlock[] = [];
+  const rejections: ParseRejection[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of rawBlocks) {
+    const filepath = raw.filepath.trim();
+    if (seen.has(filepath)) continue;
+    seen.add(filepath);
+
+    const original = originalFiles[filepath];
+    const isNewFile = original === undefined;
+
+    // Gate 1: exact path match against originalFiles (unless new files allowed)
+    if (isNewFile && !options.allowNewFiles) {
+      rejections.push({
+        filepath,
+        reason: 'unknown_path',
+        detail: `block filepath '${filepath}' is not in the agent's input files`,
+      });
+      continue;
+    }
+
+    // Gate 2: drastic shrink (only meaningful when replacing an existing file)
+    if (!isNewFile) {
+      const originalLines = original.split('\n').length;
+      const fixedLines = raw.content.split('\n').length;
+      if (originalLines >= SHRINK_FLOOR_LINES) {
+        const ratio = fixedLines / originalLines;
+        if (ratio < SHRINK_RATIO_THRESHOLD) {
+          rejections.push({
+            filepath,
+            reason: 'drastic_shrink',
+            detail: `fixed file is ${fixedLines} lines vs ${originalLines} original (ratio ${ratio.toFixed(2)} < ${SHRINK_RATIO_THRESHOLD})`,
+          });
+          continue;
+        }
+      }
+    }
+
+    // Gate 3: TypeScript syntax check (always — applies to new and replacement files)
+    const scriptKind = filepath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+    const sourceFile = ts.createSourceFile(
+      filepath,
+      raw.content,
+      ts.ScriptTarget.Latest,
+      false,
+      scriptKind,
+    );
+    const diagnostics = (sourceFile as unknown as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? [];
+    if (diagnostics.length > 0) {
+      const first = diagnostics[0];
+      const message = typeof first.messageText === 'string'
+        ? first.messageText
+        : first.messageText.messageText;
+      rejections.push({
+        filepath,
+        reason: 'invalid_syntax',
+        detail: `ts parseDiagnostics: ${diagnostics.length} error(s); first: ${message}`,
+      });
+      continue;
+    }
+
+    // Gate 4: import/export shrink (only meaningful when replacing an existing file)
+    if (!isNewFile) {
+      const importExportCheck = checkImportExportShrink(original, sourceFile);
+      if (importExportCheck) {
+        rejections.push({ filepath, ...importExportCheck });
+        continue;
+      }
+    }
+
+    blocks.push({ filepath, content: raw.content });
+  }
+
+  return { blocks, rejections };
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function extractRawBlocks(response: string): ParsedCodeBlock[] {
   const blocks: ParsedCodeBlock[] = [];
 
   // Match fenced code blocks (``` ... ```)
@@ -130,7 +295,6 @@ export function parseClaudeCodeResponse(response: string): ParsedCodeBlock[] {
     }
 
     // Convention 2: the opening fence itself carries the filepath tag
-    // Check the text immediately before this code block for ```filepath: <path>
     const openingFenceIndex = match.index;
     const precedingText = response.slice(Math.max(0, openingFenceIndex - 200), openingFenceIndex);
     const taggedFenceMatch = precedingText.match(/```filepath:\s*(.+)\s*$/);
@@ -147,11 +311,119 @@ export function parseClaudeCodeResponse(response: string): ParsedCodeBlock[] {
   let taggedMatch: RegExpExecArray | null;
   while ((taggedMatch = taggedFenceRegex.exec(response)) !== null) {
     const filepath = taggedMatch[1].trim();
-    // Avoid duplicates from convention 2 above
     if (!blocks.some((b) => b.filepath === filepath)) {
       blocks.push({ filepath, content: taggedMatch[2] });
     }
   }
 
   return blocks;
+}
+
+function extractOriginalImportSources(content: string): Set<string> {
+  const sources = new Set<string>();
+  // Match: import ... from 'module'   or   import 'module'
+  const importRegex = /^\s*import(?:\s+[\s\S]*?from)?\s+['"]([^'"]+)['"]/gm;
+  let m: RegExpExecArray | null;
+  while ((m = importRegex.exec(content)) !== null) {
+    sources.add(m[1]);
+  }
+  return sources;
+}
+
+function extractOriginalExportNames(content: string): Set<string> {
+  const names = new Set<string>();
+  // Named exports: export { a, b as c } — grab the whole block then split
+  const exportBlockRegex = /^\s*export\s*\{([^}]+)\}/gm;
+  let m: RegExpExecArray | null;
+  while ((m = exportBlockRegex.exec(content)) !== null) {
+    for (const raw of m[1].split(',')) {
+      const name = raw.trim().split(/\s+as\s+/)[0].trim();
+      if (name) names.add(name);
+    }
+  }
+  // Declaration exports: export function foo / export const foo / export class Foo / export default
+  const declRegex = /^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function\*?|class|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/gm;
+  while ((m = declRegex.exec(content)) !== null) {
+    names.add(m[1]);
+  }
+  if (/^\s*export\s+default\s+/m.test(content)) {
+    names.add('default');
+  }
+  return names;
+}
+
+function extractFixedImportSources(sourceFile: ts.SourceFile): Set<string> {
+  const sources = new Set<string>();
+  for (const stmt of sourceFile.statements) {
+    if (ts.isImportDeclaration(stmt) && ts.isStringLiteral(stmt.moduleSpecifier)) {
+      sources.add(stmt.moduleSpecifier.text);
+    }
+  }
+  return sources;
+}
+
+function extractFixedExportNames(sourceFile: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  for (const stmt of sourceFile.statements) {
+    const mods = ts.canHaveModifiers(stmt) ? ts.getModifiers(stmt) : undefined;
+    const hasExport = mods?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+    const hasDefault = mods?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
+
+    if (hasExport && hasDefault) names.add('default');
+
+    if (hasExport) {
+      if (
+        ts.isFunctionDeclaration(stmt) ||
+        ts.isClassDeclaration(stmt) ||
+        ts.isInterfaceDeclaration(stmt) ||
+        ts.isTypeAliasDeclaration(stmt) ||
+        ts.isEnumDeclaration(stmt)
+      ) {
+        if (stmt.name) names.add(stmt.name.text);
+      } else if (ts.isVariableStatement(stmt)) {
+        for (const decl of stmt.declarationList.declarations) {
+          if (ts.isIdentifier(decl.name)) names.add(decl.name.text);
+        }
+      }
+    }
+
+    // export { a, b as c } and export { a } from '...'
+    if (ts.isExportDeclaration(stmt) && stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
+      for (const el of stmt.exportClause.elements) {
+        names.add((el.name).text);
+      }
+    }
+
+    if (ts.isExportAssignment(stmt)) {
+      names.add('default');
+    }
+  }
+  return names;
+}
+
+function checkImportExportShrink(
+  original: string,
+  fixed: ts.SourceFile,
+): { reason: RejectionReason; detail: string } | null {
+  const originalImports = extractOriginalImportSources(original);
+  const fixedImports = extractFixedImportSources(fixed);
+  const lostImports = [...originalImports].filter((s) => !fixedImports.has(s));
+  if (lostImports.length > MAX_IMPORT_SOURCE_SHRINK) {
+    return {
+      reason: 'imports_lost',
+      detail: `${lostImports.length} import sources removed: ${lostImports.slice(0, 5).join(', ')}`,
+    };
+  }
+
+  const originalExports = extractOriginalExportNames(original);
+  const fixedExports = extractFixedExportNames(fixed);
+  const lostExports = [...originalExports].filter((n) => !fixedExports.has(n));
+  if (lostExports.length > 0) {
+    return {
+      reason: 'exports_lost',
+      detail: `exported names removed: ${lostExports.join(', ')}`,
+    };
+  }
+
+  return null;
 }

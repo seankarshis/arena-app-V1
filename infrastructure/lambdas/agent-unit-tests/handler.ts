@@ -1,51 +1,58 @@
 import { AgentRequest, AgentResponse, AgentReport, Finding } from '../shared/types';
-import { callClaude } from '../shared/llm-client';
-import { formatFileForReview, parseClaudeCodeResponse } from '../shared/git-operations';
+import { callClaude, ResponseTruncatedError } from '../shared/llm-client';
+import {
+  formatFileForReview,
+  parseClaudeCodeResponse,
+  rejectionToFinding,
+  truncationToFinding,
+  parseFindingsErrorToFinding,
+} from '../shared/git-operations';
 import { SYSTEM_PROMPT } from './prompt';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseFindings(text: string): Finding[] {
+type FindingsParseResult =
+  | { status: 'parsed'; findings: Finding[] }
+  | { status: 'error'; detail: string };
+
+function parseFindings(text: string): FindingsParseResult {
   const jsonBlockMatch = text.match(/```json\s*\n([\s\S]*?)\n?\s*```/);
   if (jsonBlockMatch) {
     try {
       const parsed = JSON.parse(jsonBlockMatch[1]);
-      if (Array.isArray(parsed)) return parsed as Finding[];
-    } catch {
-      // fall through
+      if (Array.isArray(parsed)) return { status: 'parsed', findings: parsed as Finding[] };
+      return { status: 'error', detail: 'json block did not contain an array' };
+    } catch (err) {
+      return { status: 'error', detail: `json block parse error: ${(err as Error).message}` };
     }
   }
   const arrayMatch = text.match(/\[\s*\{[\s\S]*?"severity"[\s\S]*?\}\s*\]/);
   if (arrayMatch) {
     try {
-      return JSON.parse(arrayMatch[0]) as Finding[];
-    } catch {
-      // ignore
+      return { status: 'parsed', findings: JSON.parse(arrayMatch[0]) as Finding[] };
+    } catch (err) {
+      return { status: 'error', detail: `fallback array parse error: ${(err as Error).message}` };
     }
   }
-  return [];
+  return { status: 'parsed', findings: [] };
 }
 
 /**
- * Unit tests agent status: capped at "warn" — never "fail".
- * New generated tests may not pass immediately and always require human review
- * to tune assertions and mocks. Blocking on test failures would break CI for
- * every PR that adds new code.
+ * Unit tests agent status: capped at "warn" for normal findings. New generated
+ * tests may not pass immediately and always require human review to tune
+ * assertions and mocks. But critical findings from the safety gates DO fail
+ * the agent — those indicate bad output, not just imperfect tests.
  */
-function determineStatus(findings: Finding[]): 'pass' | 'warn' {
+function determineStatus(findings: Finding[]): 'pass' | 'fail' | 'warn' {
+  const unfixed = findings.filter((f) => !f.fixed);
+  if (unfixed.some((f) => f.severity === 'critical')) return 'fail';
   if (findings.length === 0) return 'pass';
   return 'warn';
 }
 
-/**
- * Detect the test framework from a package.json string.
- * Returns "vitest" (project default per CLAUDE.md) if the framework cannot
- * be determined.
- */
 function detectTestFramework(files: Record<string, string>): string {
-  // Look for package.json anywhere in the files map (GitHub Actions step should include it)
   const packageJsonEntry = Object.entries(files).find(([fp]) =>
     fp === 'package.json' || fp.endsWith('/package.json'),
   );
@@ -68,12 +75,6 @@ function detectTestFramework(files: Record<string, string>): string {
   return 'vitest';
 }
 
-/**
- * Separate source files from test files and existing test file contents.
- *
- * The GitHub Actions step is expected to include existing test files in the
- * `files` map alongside the source files it wants tested.
- */
 function partitionFiles(files: Record<string, string>): {
   sourceFiles: Record<string, string>;
   existingTestFiles: Record<string, string>;
@@ -99,6 +100,14 @@ function partitionFiles(files: Record<string, string>): {
   return { sourceFiles, existingTestFiles };
 }
 
+function isTestPath(filepath: string): boolean {
+  return (
+    filepath.includes('.test.') ||
+    filepath.includes('.spec.') ||
+    filepath.includes('__tests__/')
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
@@ -110,12 +119,15 @@ function partitionFiles(files: Record<string, string>): {
  * file contents alongside source files, then asks Claude to generate or
  * augment tests. Status is capped at "warn" since generated tests may need
  * human tuning before they pass.
+ *
+ * Uses `allowNewFiles: true` because this agent creates brand-new test files
+ * that don't exist in event.files. The syntax check still runs on every new
+ * file; the shrink / import-export gates are skipped (no original to compare).
  */
 export const handler = async (event: AgentRequest): Promise<AgentResponse> => {
   const testFramework = detectTestFramework(event.files);
   const { sourceFiles, existingTestFiles } = partitionFiles(event.files);
 
-  // Build the user message with source files, existing tests, and context
   const sourceSections = Object.entries(sourceFiles)
     .map(([fp, content]) => formatFileForReview(fp, content))
     .join('\n\n---\n\n');
@@ -141,30 +153,45 @@ export const handler = async (event: AgentRequest): Promise<AgentResponse> => {
     frameworkNote +
     previousReportSection;
 
-  const { text, inputTokens, outputTokens } = await callClaude(
-    SYSTEM_PROMPT,
-    userMessage,
-    8192, // Test generation can be verbose
-  );
-
-  const codeBlocks = parseClaudeCodeResponse(text);
-  const findings = parseFindings(text);
-
-  // Collect generated/updated test files
+  const findings: Finding[] = [];
   const fixedFiles: Record<string, string> = {};
-  for (const block of codeBlocks) {
-    // Accept test files (new or existing paths)
-    const isTestPath =
-      block.filepath.includes('.test.') ||
-      block.filepath.includes('.spec.') ||
-      block.filepath.includes('__tests__/');
+  let inputTokens = 0;
+  let outputTokens = 0;
 
-    if (isTestPath) {
-      // Only store if content differs from the existing test file (if any)
-      const existingContent = existingTestFiles[block.filepath];
-      if (!existingContent || block.content.trim() !== existingContent.trim()) {
+  try {
+    const result = await callClaude(SYSTEM_PROMPT, userMessage, 8192);
+    inputTokens = result.inputTokens;
+    outputTokens = result.outputTokens;
+
+    // Parser runs against existing test files (so test edits can be validated
+    // against the original) and allows new paths for brand-new test files.
+    const { blocks, rejections } = parseClaudeCodeResponse(
+      result.text,
+      existingTestFiles,
+      { allowNewFiles: true },
+    );
+    for (const r of rejections) findings.push(rejectionToFinding(r));
+
+    const parsed = parseFindings(result.text);
+    if (parsed.status === 'error') {
+      findings.push(parseFindingsErrorToFinding(parsed.detail));
+    } else {
+      findings.push(...parsed.findings);
+    }
+
+    for (const block of blocks) {
+      if (!isTestPath(block.filepath)) continue;
+      const existing = existingTestFiles[block.filepath];
+      if (!existing || block.content.trim() !== existing.trim()) {
         fixedFiles[block.filepath] = block.content;
       }
+    }
+  } catch (err) {
+    if (err instanceof ResponseTruncatedError) {
+      findings.push(truncationToFinding(Object.keys(sourceFiles), err.message));
+      outputTokens = err.outputTokens;
+    } else {
+      throw err;
     }
   }
 

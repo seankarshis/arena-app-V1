@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT = `You are a TypeScript code style and linting agent in a CI pipeline.
+export const SYSTEM_PROMPT: string = `You are a TypeScript code style and linting agent in a CI pipeline.
 
 Your job:
 1. Review the provided TypeScript files for code style issues

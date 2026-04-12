@@ -1,4 +1,5 @@
 import { LinearClient as LinearSDKClient } from '@linear/sdk';
+
 import { AgentReport, Finding } from '../shared/types';
 
 export interface PRContext {
@@ -23,6 +24,8 @@ export interface CreatedTicket {
 
 const TICKET_CAP = 10;
 const TICKETABLE_SEVERITIES = new Set(['critical', 'high', 'medium']);
+const MESSAGE_TRUNCATE_LENGTH = 80;
+const MESSAGE_TRUNCATE_SUFFIX = 77;
 
 // Priority map per spec: 1=urgent, 2=high, 3=normal
 const SEVERITY_PRIORITY: Record<string, number> = {
@@ -40,9 +43,15 @@ const SEVERITY_ORDER: Record<string, number> = {
   critical: 4,
 };
 
+const AGENT_PREFIX = 'agent-';
+const DEFAULT_SEVERITY = 'info';
+const DEFAULT_PRIORITY = 3;
+const SUMMARY_TICKET_PRIORITY = 2;
+const PR_TITLE_MAX_LENGTH = 60;
+
 function agentDisplayName(agentName: string): string {
   return agentName
-    .replace(/^agent-/, '')
+    .replace(`^${AGENT_PREFIX}`, '')
     .split('-')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
@@ -51,15 +60,15 @@ function agentDisplayName(agentName: string): string {
 function maxSeverity(findings: Finding[]): string {
   return findings.reduce((acc, f) => {
     return (SEVERITY_ORDER[f.severity] ?? 0) > (SEVERITY_ORDER[acc] ?? 0) ? f.severity : acc;
-  }, 'info');
+  }, DEFAULT_SEVERITY);
 }
 
 function buildTicketTitle(agentName: string, findings: Finding[]): string {
   const display = agentDisplayName(agentName);
   if (findings.length === 1) {
     // Truncate long messages so title stays readable
-    const msg = findings[0].message.length > 80
-      ? findings[0].message.slice(0, 77) + '...'
+    const msg = findings[0].message.length > MESSAGE_TRUNCATE_LENGTH
+      ? findings[0].message.slice(0, MESSAGE_TRUNCATE_SUFFIX) + '...'
       : findings[0].message;
     return `[${display}] ${msg}`;
   }
@@ -159,8 +168,9 @@ export function groupFindings(reports: AgentReport[]): TicketGroup[] {
   const groupMap = new Map<string, TicketGroup>();
 
   for (const report of reports) {
-    for (const finding of report.findings) {
-      if (finding.fixed || !TICKETABLE_SEVERITIES.has(finding.severity)) continue;
+    const findings = Array.isArray(report?.findings) ? report.findings : [];
+    for (const finding of findings) {
+      if (!finding || finding.fixed || !TICKETABLE_SEVERITIES.has(finding.severity)) continue;
 
       const key = `${report.agent}::${finding.file}`;
       if (!groupMap.has(key)) {
@@ -232,14 +242,14 @@ export class LinearClient {
 
     if (groups.length > TICKET_CAP) {
       // Collapse everything into one summary ticket
-      const title = `[CI Pipeline] ${groups.length} finding groups in PR #${ctx.pr_number} — ${ctx.pr_title.slice(0, 60)}`;
+      const title = `[CI Pipeline] ${groups.length} finding groups in PR #${ctx.pr_number} — ${ctx.pr_title.slice(0, PR_TITLE_MAX_LENGTH)}`;
       const description = buildSummaryTicketDescription(groups, ctx);
       try {
         const payload = await this.sdk.createIssue({
           teamId: this.teamId,
           title,
           description,
-          priority: 2, // high
+          priority: SUMMARY_TICKET_PRIORITY,
           labelIds: baseLabelIds,
         });
         const issue = await payload.issue;
@@ -255,12 +265,12 @@ export class LinearClient {
     // One ticket per group (already sorted most-severe first)
     for (const group of groups) {
       const highest = maxSeverity(group.findings);
-      const priority = SEVERITY_PRIORITY[highest] ?? 3;
+      const priority = SEVERITY_PRIORITY[highest] ?? DEFAULT_PRIORITY;
       const title = buildTicketTitle(group.agentName, group.findings);
       const description = buildTicketDescription(group, ctx);
 
       // Resolve agent-specific label (best-effort)
-      const agentLabel = group.agentName.replace(/^agent-/, '');
+      const agentLabel = group.agentName.replace(new RegExp(`^${AGENT_PREFIX}`), '');
       const agentLabelIds = await this.resolveLabelIds([agentLabel]);
       const allLabelIds = [...new Set([...baseLabelIds, ...agentLabelIds])];
 

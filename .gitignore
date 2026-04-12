@@ -7,3 +7,8 @@ dist/
 pgdata/
 *.tsbuildinfo
 infrastructure/cdk.out/
+
+# CI agent pipeline scratch — runtime artifacts, never committed.
+.ci-artifacts/
+/payload.json
+/response.json
