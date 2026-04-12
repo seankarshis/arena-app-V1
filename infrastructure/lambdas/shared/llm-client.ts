@@ -6,9 +6,9 @@ import {
   AccessDeniedException,
 } from '@aws-sdk/client-bedrock-runtime';
 
-// GPT-4o cross-region inference profile on Bedrock.
-// Bedrock uses "us." prefix for US cross-region inference profiles.
-const MODEL_ID = 'us.openai.gpt-4o';
+// Claude Haiku 4.5 on Bedrock (US cross-region inference profile).
+// Fast and cost-effective for CI/CD code analysis tasks.
+const MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
 const DEFAULT_MAX_TOKENS = 4096;
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
@@ -16,7 +16,7 @@ const BASE_DELAY_MS = 1000;
 // Bedrock authenticates via the Lambda execution role — no API key needed.
 // AWS_REGION is automatically available in the Lambda environment.
 const client = new BedrockRuntimeClient({
-  region: process.env.AWS_REGION ?? 'us-east-1',
+  region: process.env.AWS_REGION ?? 'us-east-2',
 });
 
 export async function callLLM(
