@@ -1,6 +1,16 @@
 # Arena — Current Architecture State
 
-_Last updated: 2026-04-05_
+_Last updated: 2026-04-18_
+
+## In-flight: Interview Bot Transformation (Phase 2 design complete)
+
+The interview engine is undergoing a major shift from a deterministic queue with LLM framing into a true LLM-driven orchestration loop. Phase 1 analysis landed as `brain/tasks/interview-bot-transformation/INTERVIEW_BOT_ANALYSIS.md`. Phase 2 design artifacts landed 2026-04-18:
+
+- ADRs 005–014 under `brain/decisions/` document the significant design decisions.
+- `brain/specs/interviewer-prompt-v1.md` is the new versioned prompt artifact (see ADR 013).
+- `brain/specs/interview-spec-v3.md` and `brain/specs/conversation-protocol-spec-v4.md` are diff-style supersedes of v2/v3 on the surfaces the transformation changes.
+
+**Phase 3 implementation has not started.** Nothing in the live `api/` or `frontend/` code changes until Phase 3 begins; the current engine (deterministic queue + LLM framing, as described below) is still what runs in production.
 
 ## What's Running (EC2 Dev Environments)
 

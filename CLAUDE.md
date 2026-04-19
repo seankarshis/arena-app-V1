@@ -4,6 +4,25 @@
 
 Work only within this repo root. Do not access parent directories or `.env` files outside this directory.
 
+## Agent Autonomy (Dev Environment)
+
+This is a shared EC2 dev environment. Operate with high autonomy — pause to confirm only for the actions listed below.
+
+**Proceed without asking for:**
+- Running tests (`npm test`, `vitest`, type-checking)
+- Restarting services (`pm2 restart`, `pm2 reload`)
+- Installing packages (`npm install`)
+- Running migrations in dev (`prisma migrate dev`)
+- Reading any file in the repo
+- Spawning parallel sub-agents — do this freely when work is independent (e.g., frontend + backend changes, multi-file analysis)
+
+**Always pause and confirm before:**
+- Any `git` operation (commit, push, branch delete, rebase)
+- Dropping or truncating database tables or data
+- Modifying files outside this repo root
+- Deploying CDK stacks or touching AWS infrastructure
+- Reporting a serious finding (security issue, data integrity risk, spec conflict)
+
 ## Naming Conventions
 
 - **elastichorizon**: The company and brand. Used in UI copyright notices, legal references, and public-facing content.
@@ -11,14 +30,17 @@ Work only within this repo root. Do not access parent directories or `.env` file
 
 ## Two Authoritative Specifications
 
-- **`brain/specs/interview-spec-v2.md`** — data model, infrastructure, GraphQL schema, admin UI, cleaning pipeline, observability, auth, testing
-- **`brain/specs/conversation-protocol-spec.md`** — runtime conversation behavior, audio architecture, SSE streaming, frontend state machine, interview UI
+- **`brain/specs/interview-spec-v3.md`** — data model, infrastructure, GraphQL schema, admin UI, cleaning pipeline, observability, auth, testing. v3 is a diff-style supersede of v2; where v3 is silent, **`brain/specs/interview-spec-v2.md`** remains authoritative.
+- **`brain/specs/conversation-protocol-spec-v4.md`** — runtime conversation behavior, audio architecture, SSE streaming, frontend state machine, interview UI. v4 is a diff-style supersede of v3; where v4 is silent, **`brain/specs/conversation-protocol-spec-v3.md`** remains authoritative.
 
 ### Where They Conflict
-- **interview-spec-v2.md wins** on data model and schema decisions.
-- **conversation-protocol-spec.md wins** on runtime behavior and frontend state.
-- **KNOWN CONFLICT — RESOLVED:** conversation-protocol-spec.md Section 8 says to remove the `user_templates` junction table and use a `current_template_id` FK on the users table. **Ignore this.** Use the `user_templates` many-to-many junction table defined in interview-spec-v2.md Section 4. This is the settled decision.
-- If you discover a new conflict between the two specs, flag it clearly in your output. Do not guess which one wins — ask for clarification.
+- **interview-spec v3 (then v2)** wins on data model and schema decisions.
+- **conversation-protocol-spec v4 (then v3)** wins on runtime behavior and frontend state.
+- **KNOWN CONFLICT — RESOLVED:** conversation-protocol-spec-v3.md Section 8 says to remove the `user_templates` junction table and use a `current_template_id` FK on the users table. **Ignore this.** Use the `user_templates` many-to-many junction table defined in interview-spec-v2.md Section 4. This is the settled decision.
+- If you discover a new conflict between the specs, flag it clearly in your output. Do not guess which one wins — ask for clarification.
+
+### Versioned Prompt Artifacts
+Product-critical LLM prompts live as versioned specs under `brain/specs/` with filename pattern `{prompt-name}-prompt-v{N}.md`. The current interviewer prompt is **`brain/specs/interviewer-prompt-v1.md`** — treat it like a schema: the spec is the source of truth, changes bump the version number, and prior versions stay in the repo as archives. See ADR 013 for the pattern. Template-specific framing lives in `InterviewTemplate.systemPrompt` and layers on top of the versioned base.
 
 ### brandStandards.md
 Referenced ONLY when building UI components (frontend pages, React components). Never referenced for infrastructure, API, database, or Lambda work.
@@ -39,7 +61,7 @@ These constraints apply to ALL code in this repository. They are non-negotiable.
 - **Snapshots are the source of truth for historical data.** Never rely on joining back to master question records for interview analysis. The `question_text_as_asked` field captures the LLM's actual delivered text.
 - **Single Postgres transaction for response writes.** Never split a response write across multiple uncommitted operations.
 - **Redis is ephemeral.** The database is always the source of truth. If Redis data is lost, state is reconstructable from `interview_responses`.
-- **Tags are a controlled vocabulary.** No freeform tag creation by non-administrators.
+- **Tags are a controlled vocabulary.** End users cannot create tags through any interview-facing UI. Administrators may create tags inline when editing questions or templates. The enrichment service (`arena-enrichment`) may create tags during async processing; these require admin review via the tag normalization queue. See ADR 005.
 
 ### Security and Privacy Rules
 - **No PII in telemetry.** ClickHouse receives only: UUIDs, error codes, stack traces, metrics, timestamps, model names, counts. NEVER: names, emails, transcription content, question text, audit log changes content.
@@ -90,7 +112,7 @@ cd frontend && npm run dev        # Start Next.js
 
 ## Current Build State
 
-*Last updated: 2026-04-05. See `brain/architecture/current-state.md` for full detail.*
+*Last updated: 2026-04-18. See `brain/architecture/current-state.md` for full module status and `brain/architecture/changelog.md` for a log of what changed and when.*
 
 - **Completed modules:** API (Fastify + Apollo + Prisma, all resolvers), Frontend (Next.js, admin UI, interview UI, all hooks), all three Lambda handlers (cleaning, reconciliation, user-sync), CI/CD pipelines, all three CDK stacks (coded, not yet deployed)
 - **In progress:** (nothing active)
