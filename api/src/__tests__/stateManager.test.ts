@@ -1,9 +1,20 @@
 // ---------------------------------------------------------------------------
 // Unit Tests — Per-Turn State Manager
+//
+// The legacy v1-pool helpers (applyQuestionAsked, applyQuestionSkipped,
+// applyFollowupTriggered, buildTurnContext, formatTurnContext) are kept
+// retained while in-flight sessions drain (see ADR 008). Their tests are
+// preserved below to confirm the deprecated path still behaves correctly
+// until it is removed in the next release.
+//
+// The new v2-coverage suite at the bottom of this file covers the
+// coverage-map operations that replace the pool path.
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { InterviewSession } from '../services/session';
+import type { CoverageEntry, InterviewSessionState } from '../services/sessionState';
+import type { CoverageUpdate } from '../services/stateUpdateParser';
 import {
   applyQuestionAsked,
   applyResponseSubmitted,
@@ -11,6 +22,15 @@ import {
   applyFollowupTriggered,
   buildTurnContext,
   formatTurnContext,
+  applyCoverageUpdates,
+  applyFlaggedItems,
+  markQuestionSkipped,
+  incrementParseFailures,
+  resetParseFailures,
+  evaluateCompletion,
+  getSessionVersion,
+  reconstructSessionFromResponses,
+  type CoverageCapableSession,
   type TemplateQuestionRef,
 } from '../services/stateManager';
 
@@ -529,5 +549,541 @@ describe('formatTurnContext', () => {
     const ctx = buildTurnContext(makeSession(), standardMap, 'q3');
     const text = formatTurnContext(ctx);
     expect(text).not.toContain('### Follow-Up Triggers');
+  });
+});
+
+// ===========================================================================
+// v2-coverage suite
+// ===========================================================================
+
+// --- Helpers ---
+
+function makeCoverageSession(
+  overrides: Partial<CoverageCapableSession> = {},
+): CoverageCapableSession {
+  return {
+    coverage: {},
+    activeThreads: [],
+    factsLedger: [],
+    rapportNotes: [],
+    sessionVersion: 'v2-coverage',
+    consecutiveParseFailures: 0,
+    ...overrides,
+  };
+}
+
+function makeEntry(overrides: Partial<CoverageEntry> = {}): CoverageEntry {
+  return {
+    status: 'not_started',
+    confidence: null,
+    turnNumbers: [],
+    summary: null,
+    ...overrides,
+  };
+}
+
+// --- applyCoverageUpdates ---
+
+describe('applyCoverageUpdates', () => {
+  it('transitions statuses correctly and produces one transition record per update', () => {
+    const session = makeCoverageSession({
+      coverage: {
+        qA: makeEntry({ status: 'not_started' }),
+        qB: makeEntry({
+          status: 'partially_covered',
+          confidence: 'low',
+          turnNumbers: [2],
+          summary: 'partial',
+        }),
+      },
+    });
+
+    const updates: CoverageUpdate[] = [
+      {
+        questionId: 'qA',
+        status: 'partially_covered',
+        confidence: 'medium',
+        summary: 'the user started discussing qA',
+      },
+      {
+        questionId: 'qB',
+        status: 'fully_covered',
+        confidence: 'high',
+        summary: 'qB is now fully covered',
+      },
+    ];
+
+    const { newCoverage, transitions } = applyCoverageUpdates(session, updates, 3);
+
+    expect(transitions).toHaveLength(2);
+
+    expect(transitions[0]).toEqual({
+      questionId: 'qA',
+      oldStatus: 'not_started',
+      oldConfidence: null,
+      newStatus: 'partially_covered',
+      newConfidence: 'medium',
+      summary: 'the user started discussing qA',
+    });
+
+    expect(transitions[1]).toEqual({
+      questionId: 'qB',
+      oldStatus: 'partially_covered',
+      oldConfidence: 'low',
+      newStatus: 'fully_covered',
+      newConfidence: 'high',
+      summary: 'qB is now fully covered',
+    });
+
+    expect(newCoverage.qA.status).toBe('partially_covered');
+    expect(newCoverage.qA.confidence).toBe('medium');
+    expect(newCoverage.qA.summary).toBe('the user started discussing qA');
+    expect(newCoverage.qA.turnNumbers).toEqual([3]);
+
+    expect(newCoverage.qB.status).toBe('fully_covered');
+    expect(newCoverage.qB.turnNumbers).toEqual([2, 3]);
+  });
+
+  it('preserves untouched entries', () => {
+    const session = makeCoverageSession({
+      coverage: {
+        qA: makeEntry({ status: 'fully_covered', confidence: 'high', summary: 'done' }),
+        qB: makeEntry({ status: 'not_started' }),
+      },
+    });
+
+    const updates: CoverageUpdate[] = [
+      { questionId: 'qB', status: 'partially_covered', confidence: 'low', summary: 'just started' },
+    ];
+
+    const { newCoverage, transitions } = applyCoverageUpdates(session, updates, 4);
+
+    expect(transitions).toHaveLength(1);
+    expect(newCoverage.qA).toEqual(session.coverage.qA);
+    expect(newCoverage.qB.status).toBe('partially_covered');
+  });
+
+  it('treats a first write (no prior entry) as oldStatus=not_started / oldConfidence=null', () => {
+    const session = makeCoverageSession({ coverage: {} });
+
+    const updates: CoverageUpdate[] = [
+      { questionId: 'qNew', status: 'partially_covered', confidence: 'medium', summary: 's' },
+    ];
+
+    const { newCoverage, transitions } = applyCoverageUpdates(session, updates, 1);
+
+    expect(transitions[0].oldStatus).toBe('not_started');
+    expect(transitions[0].oldConfidence).toBeNull();
+    expect(newCoverage.qNew.turnNumbers).toEqual([1]);
+  });
+
+  it('does not mutate input session', () => {
+    const initialCoverage = {
+      qA: makeEntry({ status: 'not_started' }),
+    };
+    const session = makeCoverageSession({ coverage: initialCoverage });
+
+    const updates: CoverageUpdate[] = [
+      { questionId: 'qA', status: 'fully_covered', confidence: 'high', summary: 'ok' },
+    ];
+
+    applyCoverageUpdates(session, updates, 2);
+
+    expect(session.coverage.qA.status).toBe('not_started');
+  });
+
+  it('handles empty updates array', () => {
+    const session = makeCoverageSession();
+    const { newCoverage, transitions } = applyCoverageUpdates(session, [], 1);
+    expect(transitions).toEqual([]);
+    expect(newCoverage).toEqual(session.coverage);
+  });
+});
+
+// --- markQuestionSkipped ---
+
+describe('markQuestionSkipped', () => {
+  it('sets status=skipped and preserves prior summary', () => {
+    const session = makeCoverageSession({
+      coverage: {
+        qA: makeEntry({
+          status: 'partially_covered',
+          confidence: 'medium',
+          turnNumbers: [2],
+          summary: 'already heard some useful detail',
+        }),
+      },
+    });
+
+    const next = markQuestionSkipped(session, 'qA', 5);
+
+    expect(next.coverage.qA.status).toBe('skipped');
+    expect(next.coverage.qA.summary).toBe('already heard some useful detail');
+    expect(next.coverage.qA.turnNumbers).toEqual([2, 5]);
+    expect(next.coverage.qA.confidence).toBeNull();
+  });
+
+  it('creates a fresh skipped entry when question has no prior coverage', () => {
+    const session = makeCoverageSession({ coverage: {} });
+
+    const next = markQuestionSkipped(session, 'qFresh', 2);
+
+    expect(next.coverage.qFresh).toEqual({
+      status: 'skipped',
+      confidence: null,
+      turnNumbers: [2],
+      summary: null,
+    });
+  });
+
+  it('does not mutate input session', () => {
+    const session = makeCoverageSession({
+      coverage: { qA: makeEntry({ status: 'not_started' }) },
+    });
+    markQuestionSkipped(session, 'qA', 1);
+    expect(session.coverage.qA.status).toBe('not_started');
+  });
+});
+
+// --- incrementParseFailures / resetParseFailures ---
+
+describe('parse-failure counter', () => {
+  it('incrementParseFailures bumps the counter from 0 to 1 to 2', () => {
+    const s0 = makeCoverageSession({ consecutiveParseFailures: 0 });
+    const s1 = incrementParseFailures(s0);
+    const s2 = incrementParseFailures(s1);
+    expect(s1.consecutiveParseFailures).toBe(1);
+    expect(s2.consecutiveParseFailures).toBe(2);
+  });
+
+  it('resetParseFailures sets the counter back to 0', () => {
+    const s0 = makeCoverageSession({ consecutiveParseFailures: 3 });
+    const reset = resetParseFailures(s0);
+    expect(reset.consecutiveParseFailures).toBe(0);
+  });
+
+  it('round-trips', () => {
+    let s = makeCoverageSession({ consecutiveParseFailures: 0 });
+    s = incrementParseFailures(s);
+    s = incrementParseFailures(s);
+    expect(s.consecutiveParseFailures).toBe(2);
+    s = resetParseFailures(s);
+    expect(s.consecutiveParseFailures).toBe(0);
+    s = incrementParseFailures(s);
+    expect(s.consecutiveParseFailures).toBe(1);
+  });
+});
+
+// --- evaluateCompletion ---
+
+describe('evaluateCompletion', () => {
+  function makeTemplate(
+    entries: Array<{ questionId: string; isRequired: boolean }>,
+  ) {
+    return { questions: entries };
+  }
+
+  it('returns true when all required are fully_covered with medium/high confidence', () => {
+    const session = {
+      coverage: {
+        q1: makeEntry({ status: 'fully_covered', confidence: 'medium', summary: 's' }),
+        q2: makeEntry({ status: 'fully_covered', confidence: 'high', summary: 's' }),
+      },
+    };
+    const template = makeTemplate([
+      { questionId: 'q1', isRequired: true },
+      { questionId: 'q2', isRequired: true },
+    ]);
+
+    const { isComplete, gapReasons } = evaluateCompletion(session, template);
+    expect(isComplete).toBe(true);
+    expect(gapReasons).toEqual([]);
+  });
+
+  it('returns true when required are a mix of skipped and fully_covered (high)', () => {
+    const session = {
+      coverage: {
+        q1: makeEntry({ status: 'skipped' }),
+        q2: makeEntry({ status: 'fully_covered', confidence: 'high' }),
+      },
+    };
+    const template = makeTemplate([
+      { questionId: 'q1', isRequired: true },
+      { questionId: 'q2', isRequired: true },
+    ]);
+
+    expect(evaluateCompletion(session, template).isComplete).toBe(true);
+  });
+
+  it('ignores optional questions', () => {
+    const session = {
+      coverage: {
+        q1: makeEntry({ status: 'fully_covered', confidence: 'high' }),
+        // q-opt is optional and not_started — must not block completion
+      },
+    };
+    const template = makeTemplate([
+      { questionId: 'q1', isRequired: true },
+      { questionId: 'q-opt', isRequired: false },
+    ]);
+
+    expect(evaluateCompletion(session, template).isComplete).toBe(true);
+  });
+
+  it('returns false with a gap reason when a required question is partially_covered with low confidence', () => {
+    const session = {
+      coverage: {
+        q1: makeEntry({ status: 'partially_covered', confidence: 'low' }),
+      },
+    };
+    const template = makeTemplate([{ questionId: 'q1', isRequired: true }]);
+
+    const { isComplete, gapReasons } = evaluateCompletion(session, template);
+    expect(isComplete).toBe(false);
+    expect(gapReasons).toHaveLength(1);
+    expect(gapReasons[0]).toContain('q1');
+    expect(gapReasons[0]).toContain('partially_covered');
+  });
+
+  it('returns false when a required question is not_started', () => {
+    const session = { coverage: {} };
+    const template = makeTemplate([
+      { questionId: 'q1', isRequired: true },
+      { questionId: 'q2', isRequired: true },
+    ]);
+
+    const { isComplete, gapReasons } = evaluateCompletion(session, template);
+    expect(isComplete).toBe(false);
+    expect(gapReasons).toHaveLength(2);
+    expect(gapReasons.some((r) => r.includes('q1') && r.includes('not_started'))).toBe(true);
+    expect(gapReasons.some((r) => r.includes('q2') && r.includes('not_started'))).toBe(true);
+  });
+
+  it('returns false when fully_covered required has confidence=low', () => {
+    const session = {
+      coverage: {
+        q1: makeEntry({ status: 'fully_covered', confidence: 'low' }),
+      },
+    };
+    const template = makeTemplate([{ questionId: 'q1', isRequired: true }]);
+
+    const { isComplete, gapReasons } = evaluateCompletion(session, template);
+    expect(isComplete).toBe(false);
+    expect(gapReasons[0]).toContain('low');
+  });
+});
+
+// --- getSessionVersion ---
+
+describe('getSessionVersion', () => {
+  it("defaults to 'v1-pool' for sessions without sessionVersion", () => {
+    const session = { /* no sessionVersion */ } as { sessionVersion?: 'v1-pool' | 'v2-coverage' };
+    expect(getSessionVersion(session)).toBe('v1-pool');
+  });
+
+  it("returns 'v2-coverage' when explicitly set", () => {
+    expect(getSessionVersion({ sessionVersion: 'v2-coverage' })).toBe('v2-coverage');
+  });
+
+  it("returns 'v1-pool' when explicitly set", () => {
+    expect(getSessionVersion({ sessionVersion: 'v1-pool' })).toBe('v1-pool');
+  });
+});
+
+// --- applyFlaggedItems ---
+
+describe('applyFlaggedItems', () => {
+  function makeMockPrisma() {
+    let counter = 0;
+    return {
+      flaggedItem: {
+        create: vi.fn(async ({ data }: { data: { interviewId: string; sourceTurn: number; description: string; priority: string; suggestedTags: unknown } }) => {
+          counter += 1;
+          return {
+            id: `flag-${counter}`,
+            interviewId: data.interviewId,
+            sourceTurn: data.sourceTurn,
+            description: data.description,
+            suggestedTags: data.suggestedTags,
+            priority: data.priority,
+            needsAdminReview: true,
+            dismissedAt: null,
+            convertedToQuestionId: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        }),
+      },
+    };
+  }
+
+  it('returns an empty array when items is empty (no DB writes)', async () => {
+    const prisma = makeMockPrisma();
+    const persisted = await applyFlaggedItems(
+      prisma as unknown as Parameters<typeof applyFlaggedItems>[0],
+      'iv-1',
+      2,
+      [],
+    );
+    expect(persisted).toEqual([]);
+    expect(prisma.flaggedItem.create).not.toHaveBeenCalled();
+  });
+
+  it('writes each flagged item with correct fields and returns persisted rows', async () => {
+    const prisma = makeMockPrisma();
+    const items = [
+      { description: 'something weird', priority: 'high' as const, suggestedTags: ['security'] },
+      { description: 'edge case', priority: 'low' as const, suggestedTags: [] },
+    ];
+
+    const persisted = await applyFlaggedItems(
+      prisma as unknown as Parameters<typeof applyFlaggedItems>[0],
+      'iv-42',
+      7,
+      items,
+    );
+
+    expect(prisma.flaggedItem.create).toHaveBeenCalledTimes(2);
+    expect(prisma.flaggedItem.create.mock.calls[0][0].data.priority).toBe('HIGH');
+    expect(prisma.flaggedItem.create.mock.calls[0][0].data.interviewId).toBe('iv-42');
+    expect(prisma.flaggedItem.create.mock.calls[0][0].data.sourceTurn).toBe(7);
+    expect(prisma.flaggedItem.create.mock.calls[1][0].data.priority).toBe('LOW');
+
+    expect(persisted).toHaveLength(2);
+    expect(persisted[0]).toEqual({
+      id: 'flag-1',
+      interviewId: 'iv-42',
+      sourceTurn: 7,
+      description: 'something weird',
+      suggestedTags: ['security'],
+      priority: 'high',
+    });
+  });
+});
+
+// --- reconstructSessionFromResponses ---
+
+describe('reconstructSessionFromResponses', () => {
+  it('seeds answered questions as partially_covered with confidence=medium', async () => {
+    const prisma = {
+      interviewResponse: {
+        findMany: vi.fn().mockResolvedValue([
+          { questionId: 'qA', sequenceNumber: 1, isSkipped: false },
+          { questionId: 'qB', sequenceNumber: 2, isSkipped: false },
+        ]),
+      },
+    };
+
+    const reconstructed = await reconstructSessionFromResponses(
+      prisma as unknown as Parameters<typeof reconstructSessionFromResponses>[0],
+      'iv-99',
+    );
+
+    expect(reconstructed.sessionVersion).toBe('v2-coverage');
+    expect(reconstructed.consecutiveParseFailures).toBe(0);
+    expect(reconstructed.factsLedger).toEqual([]);
+    expect(reconstructed.activeThreads).toEqual([]);
+    expect(reconstructed.rapportNotes).toEqual([]);
+    expect(reconstructed.turnNumber).toBe(2);
+
+    expect(reconstructed.coverage.qA).toEqual({
+      status: 'partially_covered',
+      confidence: 'medium',
+      turnNumbers: [1],
+      summary: null,
+    });
+    expect(reconstructed.coverage.qB.status).toBe('partially_covered');
+    expect(reconstructed.coverage.qB.confidence).toBe('medium');
+  });
+
+  it("seeds skipped responses as status='skipped' with null confidence", async () => {
+    const prisma = {
+      interviewResponse: {
+        findMany: vi.fn().mockResolvedValue([
+          { questionId: 'qA', sequenceNumber: 1, isSkipped: false },
+          { questionId: 'qSkip', sequenceNumber: 2, isSkipped: true },
+        ]),
+      },
+    };
+
+    const reconstructed = await reconstructSessionFromResponses(
+      prisma as unknown as Parameters<typeof reconstructSessionFromResponses>[0],
+      'iv-100',
+    );
+
+    expect(reconstructed.coverage.qSkip).toEqual({
+      status: 'skipped',
+      confidence: null,
+      turnNumbers: [2],
+      summary: null,
+    });
+    expect(reconstructed.coverage.qA.status).toBe('partially_covered');
+  });
+
+  it('returns an empty coverage map and turnNumber=0 when no responses exist', async () => {
+    const prisma = {
+      interviewResponse: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+    };
+
+    const reconstructed = await reconstructSessionFromResponses(
+      prisma as unknown as Parameters<typeof reconstructSessionFromResponses>[0],
+      'iv-empty',
+    );
+
+    expect(reconstructed.coverage).toEqual({});
+    expect(reconstructed.turnNumber).toBe(0);
+  });
+
+  it('queries interview_responses filtered by interviewId and ordered by sequenceNumber', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { interviewResponse: { findMany } };
+
+    await reconstructSessionFromResponses(
+      prisma as unknown as Parameters<typeof reconstructSessionFromResponses>[0],
+      'iv-query',
+    );
+
+    expect(findMany).toHaveBeenCalledTimes(1);
+    const arg = findMany.mock.calls[0][0];
+    expect(arg.where).toEqual({ interviewId: 'iv-query' });
+    expect(arg.orderBy).toEqual({ sequenceNumber: 'asc' });
+  });
+});
+
+// --- Type-compat smoke test: InterviewSessionState is acceptable to coverage ops ---
+
+describe('coverage ops accept InterviewSessionState shapes', () => {
+  it('applyCoverageUpdates compiles with an InterviewSessionState input', () => {
+    const state: InterviewSessionState = {
+      interviewId: 'iv',
+      userId: 'u',
+      templateId: 't',
+      turnNumber: 1,
+      isStreaming: false,
+      currentTurnLlmText: '',
+      sessionVersion: 'v2-coverage',
+      consecutiveParseFailures: 0,
+      coverage: {},
+      activeThreads: [],
+      factsLedger: [],
+      rapportNotes: [],
+      questions: [],
+      intervieweeName: 'x',
+      intervieweeRole: 'y',
+      intervieweeCompany: 'z',
+      templateFocus: 'focus',
+      templateSystemPromptOverride: null,
+      conversationHistory: [],
+      currentUserUtterance: '',
+    };
+
+    const result = applyCoverageUpdates(
+      state,
+      [{ questionId: 'qX', status: 'partially_covered', confidence: 'medium', summary: 's' }],
+      1,
+    );
+    expect(result.transitions).toHaveLength(1);
   });
 });

@@ -9,14 +9,36 @@ import {
   TEMPLATE_ID,
 } from '../../prisma/seed'
 
+// Destructive integration test: truncates every table in DATABASE_URL before
+// re-seeding. Gated behind ARENA_SEED_TESTS=1 so `vitest run` never wipes a
+// live dev DB by accident. Also refuses any DATABASE_URL matching a known
+// live-environment marker, even when the gate is set.
+const SEED_TESTS_ENABLED = process.env.ARENA_SEED_TESTS === '1'
+const DB_URL = process.env.DATABASE_URL ?? ''
+const LIVE_DB_MARKERS = ['arena_seandev', 'arena_dev', 'arena_appv1', 'arena_prod']
+const TARGETS_LIVE_DB = LIVE_DB_MARKERS.some((m) => DB_URL.includes(m))
+
+if (SEED_TESTS_ENABLED && TARGETS_LIVE_DB) {
+  throw new Error(
+    `seed.test.ts refuses to run: DATABASE_URL contains a live-DB marker ` +
+      `(${LIVE_DB_MARKERS.join(' | ')}). Point at a dedicated test database ` +
+      `(e.g. arena_test) before setting ARENA_SEED_TESTS=1.`,
+  )
+}
+
+const shouldRun = SEED_TESTS_ENABLED && !TARGETS_LIVE_DB
+const describeSeed = shouldRun ? describe : describe.skip
+
 const prisma = new PrismaClient()
 
 /**
  * These tests run the seed function against a real database and verify
- * the integrity of the resulting data. DATABASE_URL must point to a
- * test-safe Postgres instance.
+ * the integrity of the resulting data. Gated behind ARENA_SEED_TESTS=1.
+ * To run: ARENA_SEED_TESTS=1 DATABASE_URL=postgresql://.../arena_test \
+ *   npx vitest run src/__tests__/seed.test.ts
  */
 beforeAll(async () => {
+  if (!shouldRun) return
   // Clean all tables in dependency order before seeding
   await prisma.templateAssignmentHistory.deleteMany()
   await prisma.userTemplate.deleteMany()
@@ -40,7 +62,7 @@ afterAll(async () => {
   await prisma.$disconnect()
 })
 
-describe('Seed: Users', () => {
+describeSeed('Seed: Users', () => {
   it('creates exactly 2 users', async () => {
     const count = await prisma.user.count()
     expect(count).toBe(2)
@@ -59,7 +81,7 @@ describe('Seed: Users', () => {
   })
 })
 
-describe('Seed: Tags', () => {
+describeSeed('Seed: Tags', () => {
   it('creates exactly 5 tags', async () => {
     const count = await prisma.tag.count()
     expect(count).toBe(5)
@@ -77,7 +99,7 @@ describe('Seed: Tags', () => {
   })
 })
 
-describe('Seed: Questions', () => {
+describeSeed('Seed: Questions', () => {
   it('creates exactly 10 questions', async () => {
     const count = await prisma.question.count()
     expect(count).toBe(10)
@@ -88,13 +110,6 @@ describe('Seed: Questions', () => {
     expect(inactive).toBe(0)
   })
 
-  it('every question has a non-empty category', async () => {
-    const questions = await prisma.question.findMany()
-    for (const q of questions) {
-      expect(q.category).toBeTruthy()
-    }
-  })
-
   it('every question has non-empty text', async () => {
     const questions = await prisma.question.findMany()
     for (const q of questions) {
@@ -103,7 +118,7 @@ describe('Seed: Questions', () => {
   })
 })
 
-describe('Seed: Question-Tag associations', () => {
+describeSeed('Seed: Question-Tag associations', () => {
   it('creates question-tag associations', async () => {
     const count = await prisma.questionTag.count()
     expect(count).toBeGreaterThan(0)
@@ -124,7 +139,7 @@ describe('Seed: Question-Tag associations', () => {
   })
 })
 
-describe('Seed: Interview Template', () => {
+describeSeed('Seed: Interview Template', () => {
   it('creates exactly 1 template', async () => {
     const count = await prisma.interviewTemplate.count()
     expect(count).toBe(1)
@@ -142,7 +157,7 @@ describe('Seed: Interview Template', () => {
   })
 })
 
-describe('Seed: Template Questions', () => {
+describeSeed('Seed: Template Questions', () => {
   it('template has exactly 6 ordered questions', async () => {
     const count = await prisma.templateQuestion.count({ where: { templateId: TEMPLATE_ID } })
     expect(count).toBe(6)
@@ -268,7 +283,7 @@ describe('Seed: Template Questions', () => {
   })
 })
 
-describe('Seed: Template Assignment', () => {
+describeSeed('Seed: Template Assignment', () => {
   it('standard user has an active template assignment', async () => {
     const assignment = await prisma.userTemplate.findFirst({
       where: { userId: STANDARD_USER_ID, templateId: TEMPLATE_ID, status: 'active' },
@@ -293,7 +308,7 @@ describe('Seed: Template Assignment', () => {
   })
 })
 
-describe('Seed: User Tags', () => {
+describeSeed('Seed: User Tags', () => {
   it('standard user has tag associations', async () => {
     const count = await prisma.userTag.count({ where: { userId: STANDARD_USER_ID } })
     expect(count).toBeGreaterThan(0)
@@ -311,7 +326,7 @@ describe('Seed: User Tags', () => {
   })
 })
 
-describe('Seed: Referential Integrity', () => {
+describeSeed('Seed: Referential Integrity', () => {
   it('no orphaned question-tag records', async () => {
     const orphanedByQuestion = await prisma.questionTag.findMany({
       where: { question: { id: { not: undefined } } },

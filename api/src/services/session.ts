@@ -1,4 +1,9 @@
 import { getRedisClient } from './redis';
+import type {
+  ActiveThread,
+  CoverageEntry,
+  FactsLedgerEntry,
+} from './sessionState';
 
 // --- TTL Constants (seconds) ---
 
@@ -70,6 +75,34 @@ export interface InterviewSession {
   isStreaming: boolean;
   /** Accumulates the LLM's streamed output for the current turn. null when no turn is active. */
   currentTurnLlmText: string | null;
+
+  // ---------------------------------------------------------------------------
+  // v2-coverage fields (added in ADR 008 / conversation-protocol-spec-v4 §5).
+  //
+  // Live alongside the legacy pool fields in the same Redis JSON blob so a
+  // session can be inspected and mutated by either orchestration path during
+  // the migration window. Existing in-flight sessions at deploy carry no
+  // sessionVersion — readers treat that as 'v1-pool' (see
+  // stateManager.getSessionVersion) and stay on the legacy code path until
+  // they drain via the 4h TTL.
+  //
+  // For new sessions built via buildInitialSession, these fields are
+  // initialized to the v2-coverage defaults and sessionVersion is set to
+  // 'v2-coverage'.
+  // ---------------------------------------------------------------------------
+
+  /** Migration gate. Missing → treated as 'v1-pool'. */
+  sessionVersion?: 'v1-pool' | 'v2-coverage';
+  /** Coverage map keyed by questionId. Empty `{}` on legacy sessions. */
+  coverage?: Record<string, CoverageEntry>;
+  /** Open conversational threads the LLM has not yet closed. */
+  activeThreads?: ActiveThread[];
+  /** Facts ledger populated asynchronously by the enrichment sidecar. */
+  factsLedger?: FactsLedgerEntry[];
+  /** Short rapport notes written by the bot via state-update. */
+  rapportNotes?: string[];
+  /** Consecutive state-update parse failures; resets on any successful parse. */
+  consecutiveParseFailures?: number;
 }
 
 // --- Session operations ---
@@ -141,6 +174,20 @@ export function buildInitialSession(params: {
     bucketsCovered[bucket] = 0;
   }
 
+  // Initialize the v2-coverage map: every template question starts 'not_started'.
+  const coverage: Record<string, CoverageEntry> = {};
+  for (const qId of [
+    ...params.requiredQuestionIds,
+    ...params.optionalQuestionIds,
+  ]) {
+    coverage[qId] = {
+      status: 'not_started',
+      confidence: null,
+      turnNumbers: [],
+      summary: null,
+    };
+  }
+
   return {
     interviewId: params.interviewId,
     templateId: params.templateId,
@@ -160,5 +207,13 @@ export function buildInitialSession(params: {
     idleWarningShown: false,
     isStreaming: false,
     currentTurnLlmText: null,
+
+    // --- v2-coverage defaults (ADR 008) ---
+    sessionVersion: 'v2-coverage',
+    coverage,
+    activeThreads: [],
+    factsLedger: [],
+    rapportNotes: [],
+    consecutiveParseFailures: 0,
   };
 }

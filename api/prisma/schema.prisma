@@ -14,28 +14,40 @@ model Tag {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  questionTags QuestionTag[]
-  userTags     UserTag[]
+  questionTags           QuestionTag[]
+  userTags               UserTag[]
+  canonicalMergeProposals TagMergeProposal[] @relation("TagMergeProposalCanonical")
 
   @@index([isActive], name: "idx_tags_is_active")
   @@map("tags")
 }
 
 model Question {
-  id        String   @id @default(uuid()) @db.Uuid
-  text      String   @db.Text
-  category  String   @db.VarChar(100)
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id               String           @id @default(uuid()) @db.Uuid
+  displayNumber    Int              @unique @default(autoincrement()) @map("display_number")
+  text             String           @db.Text
+  intent           String?          @db.Text
+  sensitivityLevel SensitivityLevel @default(STANDARD) @map("sensitivity_level")
+  isActive         Boolean          @default(true) @map("is_active")
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   questionTags       QuestionTag[]
   templateQuestions  TemplateQuestion[]
   interviewResponses InterviewResponse[]
   responseDrafts     ResponseDraft[]
+  convertedFromFlaggedItems FlaggedItem[]
 
   @@index([isActive], name: "idx_questions_is_active")
   @@map("questions")
+}
+
+enum SensitivityLevel {
+  STANDARD         @map("standard")
+  SENSITIVE        @map("sensitive")
+  HIGHLY_SENSITIVE @map("highly_sensitive")
+
+  @@map("sensitivity_level")
 }
 
 model QuestionTag {
@@ -64,6 +76,7 @@ model User {
   interviews                  Interview[]
   consentRecords              UserConsentRecord[]
   auditLogs                   AdminAuditLog[]
+  reviewedTagMergeProposals   TagMergeProposal[]          @relation("TagMergeProposalReviewer")
 
   @@map("users")
 }
@@ -141,6 +154,7 @@ model TemplateQuestion {
   categoryBucket   String   @map("category_bucket") @db.VarChar(100)
   isRequired       Boolean  @default(true) @map("is_required")
   followupTriggers Json     @default("[]") @map("followup_triggers") @db.JsonB
+  adminNotes       String?  @map("admin_notes") @db.Text
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   template InterviewTemplate @relation(fields: [templateId], references: [id])
@@ -166,10 +180,12 @@ model Interview {
   totalTtsCharacters       Int       @default(0) @map("total_tts_characters")
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  user      User                @relation(fields: [userId], references: [id])
-  template  InterviewTemplate   @relation(fields: [templateId], references: [id])
-  responses InterviewResponse[]
-  drafts    ResponseDraft[]
+  user              User                @relation(fields: [userId], references: [id])
+  template          InterviewTemplate   @relation(fields: [templateId], references: [id])
+  responses         InterviewResponse[]
+  drafts            ResponseDraft[]
+  flaggedItems      FlaggedItem[]
+  enrichmentOutbox  EnrichmentOutbox[]
 
   @@index([userId, status], name: "idx_interviews_user_id_status")
   @@index([status, pausedAt], name: "idx_interviews_status_paused_at")
@@ -209,10 +225,11 @@ model InterviewResponse {
   ttsCharactersBilled      Int?      @map("tts_characters_billed")
   respondedAt              DateTime  @default(now()) @map("responded_at") @db.Timestamptz
 
-  interview      Interview           @relation(fields: [interviewId], references: [id])
-  question       Question            @relation(fields: [questionId], references: [id])
-  parentResponse InterviewResponse?  @relation("FollowupResponses", fields: [parentResponseId], references: [id])
-  childResponses InterviewResponse[] @relation("FollowupResponses")
+  interview        Interview           @relation(fields: [interviewId], references: [id])
+  question         Question            @relation(fields: [questionId], references: [id])
+  parentResponse   InterviewResponse?  @relation("FollowupResponses", fields: [parentResponseId], references: [id])
+  childResponses   InterviewResponse[] @relation("FollowupResponses")
+  enrichmentOutbox EnrichmentOutbox[]
 
   @@index([interviewId, processingStatus], name: "idx_interview_responses_interview_processing")
   @@index([processingStatus, respondedAt], name: "idx_interview_responses_processing_responded")
@@ -273,4 +290,80 @@ model AdminAuditLog {
   @@index([entityType, entityId], name: "idx_admin_audit_log_entity")
   @@index([actorId, createdAt], name: "idx_admin_audit_log_actor_created")
   @@map("admin_audit_log")
+}
+
+model FlaggedItem {
+  id                    String    @id @default(uuid()) @db.Uuid
+  interviewId           String    @map("interview_id") @db.Uuid
+  sourceTurn            Int       @map("source_turn")
+  description           String    @db.Text
+  suggestedTags         Json      @default("[]") @map("suggested_tags") @db.JsonB
+  priority              FlaggedItemPriority
+  needsAdminReview      Boolean   @default(true) @map("needs_admin_review")
+  dismissedAt           DateTime? @map("dismissed_at") @db.Timestamptz
+  convertedToQuestionId String?   @map("converted_to_question_id") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  interview           Interview @relation(fields: [interviewId], references: [id], onDelete: Restrict)
+  convertedToQuestion Question? @relation(fields: [convertedToQuestionId], references: [id], onDelete: Restrict)
+
+  @@index([interviewId], name: "idx_flagged_items_interview_id")
+  @@index([needsAdminReview], name: "idx_flagged_items_needs_admin_review")
+  @@map("flagged_items")
+}
+
+enum FlaggedItemPriority {
+  LOW      @map("low")
+  MEDIUM   @map("medium")
+  HIGH     @map("high")
+  CRITICAL @map("critical")
+
+  @@map("flagged_item_priority")
+}
+
+model TagMergeProposal {
+  id              String                 @id @default(uuid()) @db.Uuid
+  canonicalTagId  String                 @map("canonical_tag_id") @db.Uuid
+  candidateTagIds String[]               @map("candidate_tag_ids") @db.Uuid
+  rationale       String?                @db.Text
+  status          TagMergeProposalStatus @default(PENDING)
+  proposedAt      DateTime               @default(now()) @map("proposed_at") @db.Timestamptz
+  reviewedBy      String?                @map("reviewed_by") @db.Uuid
+  reviewedAt      DateTime?              @map("reviewed_at") @db.Timestamptz
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  canonicalTag Tag   @relation("TagMergeProposalCanonical", fields: [canonicalTagId], references: [id], onDelete: Restrict)
+  reviewer     User? @relation("TagMergeProposalReviewer", fields: [reviewedBy], references: [id], onDelete: Restrict)
+
+  @@index([status], name: "idx_tag_merge_proposals_status")
+  @@index([canonicalTagId], name: "idx_tag_merge_proposals_canonical_tag")
+  @@map("tag_merge_proposals")
+}
+
+enum TagMergeProposalStatus {
+  PENDING  @map("pending")
+  APPROVED @map("approved")
+  REJECTED @map("rejected")
+  MERGED   @map("merged")
+
+  @@map("tag_merge_proposal_status")
+}
+
+model EnrichmentOutbox {
+  id           String    @id @default(uuid()) @db.Uuid
+  responseId   String    @map("response_id") @db.Uuid
+  interviewId  String    @map("interview_id") @db.Uuid
+  dispatchedAt DateTime? @map("dispatched_at") @db.Timestamptz
+  attemptCount Int       @default(0) @map("attempt_count")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  response  InterviewResponse @relation(fields: [responseId], references: [id], onDelete: Restrict)
+  interview Interview         @relation(fields: [interviewId], references: [id], onDelete: Restrict)
+
+  @@index([dispatchedAt, createdAt], name: "idx_enrichment_outbox_dispatch_poll")
+  @@index([responseId], name: "idx_enrichment_outbox_response_id")
+  @@index([interviewId], name: "idx_enrichment_outbox_interview_id")
+  @@map("enrichment_outbox")
 }

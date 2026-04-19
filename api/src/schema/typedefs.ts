@@ -28,14 +28,46 @@ export const typeDefs = `#graphql
   }
 
   # -----------------------------------------------------------------------
+  # Enums
+  # -----------------------------------------------------------------------
+
+  enum SensitivityLevel {
+    STANDARD
+    SENSITIVE
+    HIGHLY_SENSITIVE
+  }
+
+  enum FlaggedItemPriority {
+    low
+    medium
+    high
+    critical
+  }
+
+  enum FlaggedItemStatus {
+    pending
+    reviewed
+    resolved
+    dismissed
+  }
+
+  enum TagMergeProposalStatus {
+    pending
+    approved
+    rejected
+  }
+
+  # -----------------------------------------------------------------------
   # Question
   # -----------------------------------------------------------------------
 
   type Question {
     id: ID!
+    displayNumber: Int!
     text: String!
-    category: String!
     isActive: Boolean!
+    intent: String
+    sensitivityLevel: SensitivityLevel!
     tags: [Tag!]!
   }
 
@@ -70,6 +102,69 @@ export const typeDefs = `#graphql
     categoryBucket: String!
     isRequired: Boolean!
     followupTriggers: JSON!
+    adminNotes: String
+  }
+
+  # -----------------------------------------------------------------------
+  # Flagged Items
+  # -----------------------------------------------------------------------
+
+  type FlaggedItem {
+    id: ID!
+    interviewId: ID!
+    sourceTurn: Int!
+    priority: FlaggedItemPriority!
+    description: String!
+    suggestedTags: [String!]!
+    status: FlaggedItemStatus!
+    createdAt: String!
+    reviewedAt: String
+    reviewedBy: ID
+  }
+
+  # -----------------------------------------------------------------------
+  # Tag Merge Proposals
+  # -----------------------------------------------------------------------
+
+  type TagMergeProposal {
+    id: ID!
+    canonicalTagId: ID!
+    candidateTagIds: [ID!]!
+    rationale: String
+    status: TagMergeProposalStatus!
+    proposedAt: String!
+    createdAt: String!
+    reviewedAt: String
+    reviewedBy: ID
+    rejectedReason: String
+  }
+
+  # -----------------------------------------------------------------------
+  # Coverage Map
+  # -----------------------------------------------------------------------
+
+  type CoverageEntry {
+    questionId: ID!
+    status: String!
+    confidence: String
+    summary: String
+    lastUpdatedTurn: Int
+  }
+
+  type ActiveThread {
+    id: String!
+    topic: String!
+    status: String!
+    relatedQuestionIds: [ID!]!
+    openedAtTurn: Int!
+  }
+
+  type InterviewCoverageMap {
+    interviewId: ID!
+    sessionVersion: String!
+    entries: [CoverageEntry!]!
+    activeThreads: [ActiveThread!]!
+    parseFailureCount: Int!
   }
 
   # -----------------------------------------------------------------------
@@ -264,7 +359,6 @@ export const typeDefs = `#graphql
 
   input QuestionFilters {
     tagIds: [ID!]
-    category: String
     searchText: String
   }
 
@@ -284,6 +378,12 @@ export const typeDefs = `#graphql
 
   type SubmitResponsePayload {
     responseId: ID!
+    """
+    The interview's status after this turn. 'in_progress' for normal turns,
+    'completed' when the LLM emitted close_interview and the completion
+    criterion was satisfied.
+    """
+    interviewStatus: String!
   }
 
   type SkipQuestionPayload {
@@ -389,6 +489,27 @@ export const typeDefs = `#graphql
       first: Int
       after: String
     ): InterviewConnection!
+
+    """List flagged items (admin only). Filterable by status and priority."""
+    flaggedItems(
+      status: FlaggedItemStatus
+      priority: FlaggedItemPriority
+      limit: Int
+      offset: Int
+    ): [FlaggedItem!]!
+
+    """Fetch a single flagged item by ID (admin only)."""
+    flaggedItem(id: ID!): FlaggedItem
+
+    """List tag merge proposals (admin only). Filterable by status."""
+    tagMergeProposals(
+      status: TagMergeProposalStatus
+      limit: Int
+      offset: Int
+    ): [TagMergeProposal!]!
+
+    """Fetch the coverage map for an interview (admin only). Returns null if interview not found or session is v1-pool."""
+    coverageMap(interviewId: ID!): InterviewCoverageMap
   }
 
   # -----------------------------------------------------------------------
@@ -401,13 +522,14 @@ export const typeDefs = `#graphql
     updateTag(id: ID!, label: String, isActive: Boolean): Tag!
 
     # --- Question management (admin only) ---
-    createQuestion(text: String!, category: String!, tagIds: [ID!]): Question!
+    createQuestion(text: String!, tagIds: [ID!]): Question!
     updateQuestion(
       id: ID!
       text: String
-      category: String
       tagIds: [ID!]
       isActive: Boolean
+      intent: String
+      sensitivityLevel: SensitivityLevel
     ): Question!
 
     # --- Template management (admin only) ---
@@ -433,6 +555,7 @@ export const typeDefs = `#graphql
       categoryBucket: String
       isRequired: Boolean
       followupTriggers: JSON
+      adminNotes: String
     ): TemplateQuestion!
     reorderTemplateQuestions(templateId: ID!, orderedIds: [ID!]!): [TemplateQuestion!]!
     removeQuestionFromTemplate(id: ID!): Boolean!
@@ -489,5 +612,17 @@ export const typeDefs = `#graphql
       cleanedMarkdown: String!
       cleaningModel: String!
     ): UpdateCleanedContentPayload!
+
+    # --- Flagged item review (admin only) ---
+    resolveFlaggedItem(
+      id: ID!
+      status: FlaggedItemStatus!
+      notes: String
+    ): FlaggedItem!
+
+    # --- Tag merge proposal review (admin only) ---
+    """Approve a tag merge proposal. If canonicalTagId is provided, merge candidateTagIds into that tag; if null, the canonicalTagId on the proposal is used as the merge target."""
+    approveTagMergeProposal(id: ID!, canonicalTagId: ID): TagMergeProposal!
+    rejectTagMergeProposal(id: ID!, reason: String!): TagMergeProposal!
   }
 `;

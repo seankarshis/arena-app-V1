@@ -96,6 +96,7 @@ function createMockPrisma() {
     adminAuditLog: {
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
+      create: vi.fn().mockResolvedValue({ id: 'audit-001' }),
     },
     $transaction: vi.fn().mockImplementation(async (arg: unknown) => {
       if (Array.isArray(arg)) return Promise.all(arg);
@@ -288,8 +289,8 @@ describe('Query.getQuestions', () => {
   it('returns paginated active questions', async () => {
     const ctx = adminCtx();
     const questions = [
-      { id: 'q1', text: 'Q1', category: 'cat', isActive: true },
-      { id: 'q2', text: 'Q2', category: 'cat', isActive: true },
+      { id: 'q1', text: 'Q1', isActive: true },
+      { id: 'q2', text: 'Q2', isActive: true },
     ];
     ctx.prisma.question.findMany.mockResolvedValue(questions);
     ctx.prisma.question.count.mockResolvedValue(2);
@@ -305,9 +306,9 @@ describe('Query.getQuestions', () => {
     const ctx = adminCtx();
     // Return 3 items when take is 2 (first=2 → take=2, fetch 3)
     const questions = [
-      { id: 'q1', text: 'Q1', category: 'cat', isActive: true },
-      { id: 'q2', text: 'Q2', category: 'cat', isActive: true },
-      { id: 'q3', text: 'Q3', category: 'cat', isActive: true },
+      { id: 'q1', text: 'Q1', isActive: true },
+      { id: 'q2', text: 'Q2', isActive: true },
+      { id: 'q3', text: 'Q3', isActive: true },
     ];
     ctx.prisma.question.findMany.mockResolvedValue(questions);
     ctx.prisma.question.count.mockResolvedValue(5);
@@ -321,7 +322,7 @@ describe('Query.getQuestions', () => {
   it('handles cursor-based pagination with after', async () => {
     const ctx = adminCtx();
     ctx.prisma.question.findMany.mockResolvedValue([
-      { id: 'q3', text: 'Q3', category: 'cat', isActive: true },
+      { id: 'q3', text: 'Q3', isActive: true },
     ]);
     ctx.prisma.question.count.mockResolvedValue(3);
 
@@ -348,16 +349,6 @@ describe('Query.getQuestions', () => {
     );
   });
 
-  it('filters by category', async () => {
-    const ctx = adminCtx();
-    ctx.prisma.question.findMany.mockResolvedValue([]);
-    ctx.prisma.question.count.mockResolvedValue(0);
-
-    await Q.getQuestions({}, { filters: { category: 'technical' } }, ctx);
-    const callArgs = ctx.prisma.question.findMany.mock.calls[0][0];
-    expect(callArgs.where.category).toBe('technical');
-  });
-
   it('filters by search text', async () => {
     const ctx = adminCtx();
     ctx.prisma.question.findMany.mockResolvedValue([]);
@@ -365,10 +356,7 @@ describe('Query.getQuestions', () => {
 
     await Q.getQuestions({}, { filters: { searchText: 'leadership' } }, ctx);
     const callArgs = ctx.prisma.question.findMany.mock.calls[0][0];
-    expect(callArgs.where.OR).toEqual([
-      { text: { contains: 'leadership', mode: 'insensitive' } },
-      { category: { contains: 'leadership', mode: 'insensitive' } },
-    ]);
+    expect(callArgs.where.text).toEqual({ contains: 'leadership', mode: 'insensitive' });
   });
 
   it('filters by tag IDs', async () => {
@@ -709,12 +697,12 @@ describe('Mutation.updateTag', () => {
 describe('Mutation.createQuestion', () => {
   it('creates a question without tags', async () => {
     const ctx = adminCtx();
-    const question = { id: 'q1', text: 'What?', category: 'general', isActive: true };
+    const question = { id: 'q1', text: 'What?', isActive: true };
     ctx.prisma.question.create.mockResolvedValue(question);
 
     const result = await M.createQuestion(
       {},
-      { text: 'What?', category: 'general' },
+      { text: 'What?' },
       ctx,
     );
     expect(result).toEqual(question);
@@ -725,19 +713,17 @@ describe('Mutation.createQuestion', () => {
     ctx.prisma.question.create.mockResolvedValue({
       id: 'q1',
       text: 'Q',
-      category: 'cat',
       isActive: true,
     });
 
     await M.createQuestion(
       {},
-      { text: 'Q', category: 'cat', tagIds: ['t1', 't2'] },
+      { text: 'Q', tagIds: ['t1', 't2'] },
       ctx,
     );
     expect(ctx.prisma.question.create).toHaveBeenCalledWith({
       data: {
         text: 'Q',
-        category: 'cat',
         questionTags: {
           create: [{ tagId: 't1' }, { tagId: 't2' }],
         },
@@ -747,7 +733,7 @@ describe('Mutation.createQuestion', () => {
 
   it('requires admin', async () => {
     await expect(
-      M.createQuestion({}, { text: 'x', category: 'c' }, userCtx()),
+      M.createQuestion({}, { text: 'x' }, userCtx()),
     ).rejects.toMatchObject({ extensions: { code: 'FORBIDDEN' } });
   });
 });
@@ -756,16 +742,16 @@ describe('Mutation.createQuestion', () => {
 // Mutation: updateQuestion
 // =========================================================================
 describe('Mutation.updateQuestion', () => {
-  it('updates question text and category', async () => {
+  it('updates question text', async () => {
     const ctx = adminCtx();
-    const existing = { id: 'q1', text: 'Old', category: 'old', isActive: true };
-    const updated = { id: 'q1', text: 'New', category: 'new', isActive: true };
+    const existing = { id: 'q1', text: 'Old', isActive: true };
+    const updated = { id: 'q1', text: 'New', isActive: true };
     ctx.prisma.question.findUnique.mockResolvedValue(existing);
     ctx.prisma.question.update.mockResolvedValue(updated);
 
     const result = await M.updateQuestion(
       {},
-      { id: 'q1', text: 'New', category: 'new' },
+      { id: 'q1', text: 'New' },
       ctx,
     );
     expect(result).toEqual(updated);
@@ -776,9 +762,8 @@ describe('Mutation.updateQuestion', () => {
     ctx.prisma.question.findUnique.mockResolvedValue({
       id: 'q1',
       text: 'Q',
-      category: 'cat',
     });
-    const updated = { id: 'q1', text: 'Q', category: 'cat', isActive: true };
+    const updated = { id: 'q1', text: 'Q', isActive: true };
     ctx.prisma.question.update.mockResolvedValue(updated);
 
     await M.updateQuestion({}, { id: 'q1', tagIds: ['t1', 't3'] }, ctx);
@@ -812,13 +797,11 @@ describe('Mutation.updateQuestion', () => {
     ctx.prisma.question.findUnique.mockResolvedValue({
       id: 'q1',
       text: 'Q',
-      category: 'cat',
       isActive: true,
     });
     ctx.prisma.question.update.mockResolvedValue({
       id: 'q1',
       text: 'Q',
-      category: 'cat',
       isActive: false,
     });
 
@@ -1933,7 +1916,7 @@ describe('Pagination edge cases', () => {
 
   it('cursors are base64 encoded ids', async () => {
     const ctx = adminCtx();
-    const q = { id: 'test-uuid-123', text: 'Q', category: 'cat', isActive: true };
+    const q = { id: 'test-uuid-123', text: 'Q', isActive: true };
     ctx.prisma.question.findMany.mockResolvedValue([q]);
     ctx.prisma.question.count.mockResolvedValue(1);
 

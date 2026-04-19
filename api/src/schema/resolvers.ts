@@ -13,6 +13,7 @@ import {
   forbidden,
   internalError,
   externalServiceError,
+  validationError,
 } from '../middleware/errors';
 import {
   startInterview as startInterviewService,
@@ -25,15 +26,24 @@ import {
   skipQuestion as skipQuestionService,
   completeInterview as completeInterviewService,
   createClaudeApiClient,
+  createClaudeStreamingClient,
   createEventPublisher,
 } from '../services/interviewEngine';
 import { saveDraft as saveDraftService } from '../services/draftService';
 import { pushTurnToSSE } from '../sse/stream';
+import { getRedisClient } from '../services/redis';
+import type { InterviewSessionState } from '../services/sessionState';
 
 function getClaudeClient() {
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) throw internalError('CLAUDE_API_KEY is not configured');
   return createClaudeApiClient(apiKey);
+}
+
+function getStreamingClaudeClient() {
+  const apiKey = process.env.CLAUDE_API_KEY;
+  if (!apiKey) throw internalError('CLAUDE_API_KEY is not configured');
+  return createClaudeStreamingClient(apiKey);
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +121,10 @@ async function paginate<T extends { id: string }>(
   count: (args: any) => Promise<number>,
   where: Record<string, unknown>,
   pagination: { first?: number | null; after?: string | null },
-  orderBy: Record<string, string> = { createdAt: 'desc' },
+  orderBy: Record<string, string> | Array<Record<string, string>> = [
+    { createdAt: 'desc' },
+    { id: 'desc' },
+  ],
 ) {
   const take = clampPageSize(pagination.first);
   const findArgs: Record<string, unknown> = { where, take: take + 1, orderBy };
@@ -139,6 +152,75 @@ async function paginate<T extends { id: string }>(
     },
     totalCount,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Utility: derive FlaggedItemStatus from Prisma fields
+// ---------------------------------------------------------------------------
+
+type FlaggedItemRow = {
+  id: string;
+  interviewId: string;
+  sourceTurn: number;
+  priority: string;
+  description: string;
+  suggestedTags: unknown;
+  needsAdminReview: boolean;
+  dismissedAt: Date | null;
+  convertedToQuestionId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+function deriveFlaggedItemStatus(row: FlaggedItemRow): string {
+  if (row.dismissedAt) return 'dismissed';
+  if (row.convertedToQuestionId) return 'resolved';
+  if (!row.needsAdminReview) return 'reviewed';
+  return 'pending';
+}
+
+function mapFlaggedItem(row: FlaggedItemRow) {
+  const suggestedTags = Array.isArray(row.suggestedTags) ? row.suggestedTags as string[] : [];
+  return {
+    id: row.id,
+    interviewId: row.interviewId,
+    sourceTurn: row.sourceTurn,
+    priority: row.priority.toLowerCase(),
+    description: row.description,
+    suggestedTags,
+    status: deriveFlaggedItemStatus(row),
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+    reviewedAt: row.updatedAt && !row.needsAdminReview
+      ? (row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt)
+      : null,
+    reviewedBy: null, // not stored in this Prisma model
+  };
+}
+
+function mapFlaggedItemStatusToWhere(status: string | null | undefined): Record<string, unknown> {
+  if (!status) return {};
+  switch (status) {
+    case 'dismissed':
+      return { dismissedAt: { not: null } };
+    case 'resolved':
+      return { convertedToQuestionId: { not: null }, dismissedAt: null };
+    case 'reviewed':
+      return { needsAdminReview: false, dismissedAt: null, convertedToQuestionId: null };
+    case 'pending':
+      return { needsAdminReview: true, dismissedAt: null, convertedToQuestionId: null };
+    default:
+      return {};
+  }
+}
+
+function mapFlaggedItemPriorityToWhere(priority: string | null | undefined): Record<string, unknown> {
+  if (!priority) return {};
+  // Prisma enum is uppercase (LOW, MEDIUM, HIGH, CRITICAL), schema maps to lowercase
+  return { priority: priority.toUpperCase() };
+}
+
+function sessionRedisKey(interviewId: string): string {
+  return `interview:session:${interviewId}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +268,7 @@ export const resolvers = {
     async getQuestions(
       _parent: unknown,
       args: {
-        filters?: { tagIds?: string[]; category?: string; searchText?: string } | null;
+        filters?: { tagIds?: string[]; searchText?: string } | null;
         includeInactive?: boolean | null;
         first?: number | null;
         after?: string | null;
@@ -196,12 +278,8 @@ export const resolvers = {
       requireAuth(ctx);
       const where: Record<string, unknown> = {};
       if (!args.includeInactive) where.isActive = true;
-      if (args.filters?.category) where.category = args.filters.category;
       if (args.filters?.searchText) {
-        where.OR = [
-          { text: { contains: args.filters.searchText, mode: 'insensitive' } },
-          { category: { contains: args.filters.searchText, mode: 'insensitive' } },
-        ];
+        where.text = { contains: args.filters.searchText, mode: 'insensitive' };
       }
       if (args.filters?.tagIds && args.filters.tagIds.length > 0) {
         where.questionTags = { some: { tagId: { in: args.filters.tagIds } } };
@@ -382,6 +460,120 @@ export const resolvers = {
         { first: args.first, after: args.after },
       );
     },
+
+    // --- Flagged items (admin only) ---
+    async flaggedItems(
+      _parent: unknown,
+      args: {
+        status?: string | null;
+        priority?: string | null;
+        limit?: number | null;
+        offset?: number | null;
+      },
+      ctx: ArenaContext,
+    ) {
+      requireAdmin(ctx);
+      const where: Record<string, unknown> = {
+        ...mapFlaggedItemStatusToWhere(args.status),
+        ...mapFlaggedItemPriorityToWhere(args.priority),
+      };
+      const limit = Math.min(args.limit ?? 50, 200);
+      const offset = args.offset ?? 0;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows = await (ctx.prisma as any).flaggedItem.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      });
+      return (rows as FlaggedItemRow[]).map(mapFlaggedItem);
+    },
+
+    async flaggedItem(
+      _parent: unknown,
+      args: { id: string },
+      ctx: ArenaContext,
+    ) {
+      requireAdmin(ctx);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = await (ctx.prisma as any).flaggedItem.findUnique({ where: { id: args.id } });
+      if (!row) return null;
+      return mapFlaggedItem(row as FlaggedItemRow);
+    },
+
+    // --- Tag merge proposals (admin only) ---
+    async tagMergeProposals(
+      _parent: unknown,
+      args: {
+        status?: string | null;
+        limit?: number | null;
+        offset?: number | null;
+      },
+      ctx: ArenaContext,
+    ) {
+      requireAdmin(ctx);
+      const where: Record<string, unknown> = {};
+      if (args.status) where.status = args.status.toUpperCase();
+      const limit = Math.min(args.limit ?? 50, 200);
+      const offset = args.offset ?? 0;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows = await (ctx.prisma as any).tagMergeProposal.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      });
+      return rows;
+    },
+
+    // --- Coverage map (admin only) ---
+    async coverageMap(
+      _parent: unknown,
+      args: { interviewId: string },
+      ctx: ArenaContext,
+    ) {
+      requireAdmin(ctx);
+
+      const interview = await ctx.prisma.interview.findUnique({ where: { id: args.interviewId } });
+      if (!interview) return null;
+
+      try {
+        const redis = getRedisClient();
+        const raw = await redis.get(sessionRedisKey(args.interviewId));
+        if (!raw) return null;
+
+        const session = JSON.parse(raw) as InterviewSessionState;
+        if (session.sessionVersion !== 'v2-coverage') return null;
+
+        const entries = Object.entries(session.coverage).map(([questionId, entry]) => ({
+          questionId,
+          status: entry.status,
+          confidence: entry.confidence ?? null,
+          summary: entry.summary ?? null,
+          lastUpdatedTurn: entry.turnNumbers.length > 0
+            ? entry.turnNumbers[entry.turnNumbers.length - 1]
+            : null,
+        }));
+
+        const activeThreads = session.activeThreads.map((thread, idx) => ({
+          id: `thread-${idx}`,
+          topic: thread.topic,
+          status: 'open',
+          relatedQuestionIds: thread.questionIds,
+          openedAtTurn: thread.openedAtTurn,
+        }));
+
+        return {
+          interviewId: args.interviewId,
+          sessionVersion: session.sessionVersion,
+          entries,
+          activeThreads,
+          parseFailureCount: session.consecutiveParseFailures,
+        };
+      } catch {
+        return null;
+      }
+    },
   },
 
   // =========================================================================
@@ -432,14 +624,13 @@ export const resolvers = {
 
     async createQuestion(
       _parent: unknown,
-      args: { text: string; category: string; tagIds?: string[] | null },
+      args: { text: string; tagIds?: string[] | null },
       ctx: ArenaContext,
     ) {
       requireAdmin(ctx);
       return ctx.prisma.question.create({
         data: {
           text: args.text,
-          category: args.category,
           questionTags:
             args.tagIds && args.tagIds.length > 0
               ? { create: args.tagIds.map((tagId) => ({ tagId })) }
@@ -453,22 +644,32 @@ export const resolvers = {
       args: {
         id: string;
         text?: string | null;
-        category?: string | null;
         tagIds?: string[] | null;
         isActive?: boolean | null;
+        intent?: string | null;
+        sensitivityLevel?: string | null;
       },
       ctx: ArenaContext,
     ) {
-      requireAdmin(ctx);
+      const admin = requireAdmin(ctx);
       const question = await ctx.prisma.question.findUnique({ where: { id: args.id } });
       if (!question) throw notFound('Question not found', { questionId: args.id });
 
       const data: Record<string, unknown> = {};
       if (args.text != null) data.text = args.text;
-      if (args.category != null) data.category = args.category;
       if (args.isActive != null) data.isActive = args.isActive;
+      if (args.intent !== undefined) data.intent = args.intent;
+      if (args.sensitivityLevel != null) data.sensitivityLevel = args.sensitivityLevel;
+
+      // Build changes for audit log
+      const changes: Record<string, unknown> = {};
+      if (args.text != null) changes.text = args.text;
+      if (args.isActive != null) changes.isActive = args.isActive;
+      if (args.intent !== undefined) changes.intent = args.intent;
+      if (args.sensitivityLevel != null) changes.sensitivityLevel = args.sensitivityLevel;
 
       if (args.tagIds !== undefined && args.tagIds !== null) {
+        changes.tagIds = args.tagIds;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return ctx.prisma.$transaction(async (tx: any) => {
           await tx.questionTag.deleteMany({ where: { questionId: args.id } });
@@ -477,11 +678,31 @@ export const resolvers = {
               data: args.tagIds!.map((tagId: string) => ({ questionId: args.id, tagId })),
             });
           }
+          await tx.adminAuditLog.create({
+            data: {
+              actorId: admin.userId,
+              action: 'updateQuestion',
+              entityType: 'Question',
+              entityId: args.id,
+              changes,
+            },
+          });
           return tx.question.update({ where: { id: args.id }, data });
         });
       }
 
-      return ctx.prisma.question.update({ where: { id: args.id }, data });
+      return ctx.prisma.$transaction(async (tx: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        await tx.adminAuditLog.create({
+          data: {
+            actorId: admin.userId,
+            action: 'updateQuestion',
+            entityType: 'Question',
+            entityId: args.id,
+            changes,
+          },
+        });
+        return tx.question.update({ where: { id: args.id }, data });
+      });
     },
 
     // --- Template management (admin only) ---
@@ -573,6 +794,7 @@ export const resolvers = {
         categoryBucket?: string | null;
         isRequired?: boolean | null;
         followupTriggers?: unknown;
+        adminNotes?: string | null;
       },
       ctx: ArenaContext,
     ) {
@@ -585,6 +807,7 @@ export const resolvers = {
       if (args.categoryBucket != null) data.categoryBucket = args.categoryBucket;
       if (args.isRequired != null) data.isRequired = args.isRequired;
       if (args.followupTriggers !== undefined) data.followupTriggers = args.followupTriggers as string;
+      if (args.adminNotes !== undefined) data.adminNotes = args.adminNotes;
 
       return ctx.prisma.templateQuestion.update({ where: { id: args.id }, data });
     },
@@ -943,7 +1166,10 @@ export const resolvers = {
       ctx: ArenaContext,
     ) {
       requireAuth(ctx);
-      const result = await submitResponseService(ctx.prisma, ctx.user!.userId, args, { claude: getClaudeClient() });
+      const result = await submitResponseService(ctx.prisma, ctx.user!.userId, args, {
+        claude: getClaudeClient(),
+        streamingClaude: getStreamingClaudeClient(),
+      });
       void pushTurnToSSE(args.interviewId);
       return result;
     },
@@ -1072,6 +1298,167 @@ export const resolvers = {
         },
       });
       return { success: true };
+    },
+
+    // --- Flagged item review (admin only) ---
+
+    async resolveFlaggedItem(
+      _parent: unknown,
+      args: { id: string; status: string; notes?: string | null },
+      ctx: ArenaContext,
+    ) {
+      const admin = requireAdmin(ctx);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const item = await (ctx.prisma as any).flaggedItem.findUnique({ where: { id: args.id } });
+      if (!item) throw notFound('Flagged item not found', { flaggedItemId: args.id });
+
+      const validStatuses = ['pending', 'reviewed', 'resolved', 'dismissed'];
+      if (!validStatuses.includes(args.status)) {
+        throw validationError('Invalid status value', { status: args.status });
+      }
+
+      // Map GQL status to Prisma fields
+      const updateData: Record<string, unknown> = {};
+      switch (args.status) {
+        case 'dismissed':
+          updateData.dismissedAt = new Date();
+          updateData.needsAdminReview = false;
+          break;
+        case 'resolved':
+          updateData.needsAdminReview = false;
+          break;
+        case 'reviewed':
+          updateData.needsAdminReview = false;
+          break;
+        case 'pending':
+          updateData.needsAdminReview = true;
+          updateData.dismissedAt = null;
+          break;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updated = await (ctx.prisma as any).$transaction(async (tx: any) => {
+        await tx.adminAuditLog.create({
+          data: {
+            actorId: admin.userId,
+            action: 'resolveFlaggedItem',
+            entityType: 'FlaggedItem',
+            entityId: args.id,
+            changes: { status: args.status, ...(args.notes ? { notes: args.notes } : {}) },
+          },
+        });
+        return tx.flaggedItem.update({ where: { id: args.id }, data: updateData });
+      });
+
+      return mapFlaggedItem(updated as FlaggedItemRow);
+    },
+
+    // --- Tag merge proposal review (admin only) ---
+
+    async approveTagMergeProposal(
+      _parent: unknown,
+      args: { id: string; canonicalTagId?: string | null },
+      ctx: ArenaContext,
+    ) {
+      const admin = requireAdmin(ctx);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const proposal = await (ctx.prisma as any).tagMergeProposal.findUnique({ where: { id: args.id } });
+      if (!proposal) throw notFound('Tag merge proposal not found', { proposalId: args.id });
+      if (proposal.status !== 'PENDING') {
+        throw invalidState('Tag merge proposal is not in pending status', { proposalId: args.id, status: proposal.status });
+      }
+
+      const targetTagId = args.canonicalTagId ?? proposal.canonicalTagId;
+
+      // Verify target tag exists
+      const targetTag = await ctx.prisma.tag.findUnique({ where: { id: targetTagId } });
+      if (!targetTag) throw notFound('Target tag not found', { tagId: targetTagId });
+
+      const now = new Date();
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (ctx.prisma as any).$transaction(async (tx: any) => {
+        // Remap questionTags from candidate tags to canonical tag (deduplicate)
+        if (proposal.candidateTagIds && proposal.candidateTagIds.length > 0) {
+          for (const candidateTagId of proposal.candidateTagIds as string[]) {
+            // Find all question associations for this candidate tag
+            const qtRows = await tx.questionTag.findMany({
+              where: { tagId: candidateTagId },
+            });
+            for (const qt of qtRows) {
+              // Check if target mapping already exists
+              const exists = await tx.questionTag.findFirst({
+                where: { questionId: qt.questionId, tagId: targetTagId },
+              });
+              if (!exists) {
+                await tx.questionTag.create({
+                  data: { questionId: qt.questionId, tagId: targetTagId },
+                });
+              }
+            }
+            // Remove old question-tag associations
+            await tx.questionTag.deleteMany({ where: { tagId: candidateTagId } });
+            // Soft-delete candidate tag
+            await tx.tag.update({ where: { id: candidateTagId }, data: { isActive: false } });
+          }
+        }
+
+        await tx.adminAuditLog.create({
+          data: {
+            actorId: admin.userId,
+            action: 'approveTagMergeProposal',
+            entityType: 'TagMergeProposal',
+            entityId: args.id,
+            changes: {
+              targetTagId,
+              candidateTagIds: proposal.candidateTagIds,
+            },
+          },
+        });
+
+        return tx.tagMergeProposal.update({
+          where: { id: args.id },
+          data: { status: 'APPROVED', reviewedBy: admin.userId, reviewedAt: now },
+        });
+      });
+    },
+
+    async rejectTagMergeProposal(
+      _parent: unknown,
+      args: { id: string; reason: string },
+      ctx: ArenaContext,
+    ) {
+      const admin = requireAdmin(ctx);
+
+      if (!args.reason || args.reason.trim().length === 0) {
+        throw validationError('Rejection reason must not be empty', { proposalId: args.id });
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const proposal = await (ctx.prisma as any).tagMergeProposal.findUnique({ where: { id: args.id } });
+      if (!proposal) throw notFound('Tag merge proposal not found', { proposalId: args.id });
+      if (proposal.status !== 'PENDING') {
+        throw invalidState('Tag merge proposal is not in pending status', { proposalId: args.id, status: proposal.status });
+      }
+
+      const now = new Date();
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (ctx.prisma as any).$transaction(async (tx: any) => {
+        await tx.adminAuditLog.create({
+          data: {
+            actorId: admin.userId,
+            action: 'rejectTagMergeProposal',
+            entityType: 'TagMergeProposal',
+            entityId: args.id,
+            changes: { reason: args.reason },
+          },
+        });
+        return tx.tagMergeProposal.update({
+          where: { id: args.id },
+          data: { status: 'REJECTED', reviewedBy: admin.userId, reviewedAt: now },
+        });
+      });
     },
   },
 
@@ -1202,5 +1589,22 @@ export const resolvers = {
       parent.createdAt instanceof Date
         ? parent.createdAt.toISOString()
         : parent.createdAt,
+  },
+
+  TagMergeProposal: {
+    status: (parent: { status: string }) => parent.status.toLowerCase(),
+    proposedAt: (parent: { proposedAt: Date | string }) =>
+      parent.proposedAt instanceof Date
+        ? parent.proposedAt.toISOString()
+        : parent.proposedAt,
+    createdAt: (parent: { createdAt: Date | string }) =>
+      parent.createdAt instanceof Date
+        ? parent.createdAt.toISOString()
+        : parent.createdAt,
+    reviewedAt: (parent: { reviewedAt: Date | string | null }) =>
+      parent.reviewedAt instanceof Date
+        ? parent.reviewedAt.toISOString()
+        : parent.reviewedAt ?? null,
+    rejectedReason: (_parent: unknown) => null, // not stored in Prisma model — reserved for future
   },
 };
