@@ -4,6 +4,9 @@ import { useState, useRef } from 'react';
 import { useQuery, useMutation, gql } from '@apollo/client';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { TagChipInput } from '@/components/admin/TagChipInput';
+import { QuestionModal } from '@/components/admin/QuestionModal';
+import { QuestionRefBadge } from '@/components/ui/QuestionRefBadge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -15,11 +18,15 @@ interface Tag {
   isActive: boolean;
 }
 
+type SensitivityLevel = 'STANDARD' | 'SENSITIVE' | 'HIGHLY_SENSITIVE';
+
 interface Question {
   id: string;
+  displayNumber: number;
   text: string;
-  category: string;
   isActive: boolean;
+  intent: string | null;
+  sensitivityLevel: SensitivityLevel;
   tags: Tag[];
 }
 
@@ -62,9 +69,11 @@ const GET_QUESTIONS = gql`
         cursor
         node {
           id
+          displayNumber
           text
-          category
           isActive
+          intent
+          sensitivityLevel
           tags {
             id
             label
@@ -93,57 +102,29 @@ const GET_TAGS = gql`
   }
 `;
 
-const GET_ALL_CATEGORIES = gql`
-  query AdminGetAllCategories {
-    getQuestions(first: 500, includeInactive: true) {
-      edges {
-        node {
-          category
-        }
-      }
-    }
-  }
-`;
-
-const CREATE_QUESTION = gql`
-  mutation AdminCreateQuestion(
-    $text: String!
-    $category: String!
-    $tagIds: [ID!]
-  ) {
-    createQuestion(text: $text, category: $category, tagIds: $tagIds) {
-      id
-      text
-      category
-      isActive
-      tags {
-        id
-        label
-        isActive
-      }
-    }
-  }
-`;
-
 const UPDATE_QUESTION = gql`
   mutation AdminUpdateQuestion(
     $id: ID!
     $text: String
-    $category: String
     $tagIds: [ID!]
     $isActive: Boolean
+    $intent: String
+    $sensitivityLevel: SensitivityLevel
   ) {
     updateQuestion(
       id: $id
       text: $text
-      category: $category
       tagIds: $tagIds
       isActive: $isActive
+      intent: $intent
+      sensitivityLevel: $sensitivityLevel
     ) {
       id
+      displayNumber
       text
-      category
       isActive
+      intent
+      sensitivityLevel
       tags {
         id
         label
@@ -159,164 +140,6 @@ const UPDATE_QUESTION = gql`
 
 const PAGE_SIZE = 25;
 
-// ---------------------------------------------------------------------------
-// QuestionModal — create / edit
-// ---------------------------------------------------------------------------
-
-interface ModalProps {
-  mode: 'create' | 'edit';
-  question: Question | null;
-  allTags: Tag[];
-  allCategories: string[];
-  onSave: (data: { text: string; category: string; tagIds: string[] }) => void;
-  onClose: () => void;
-  isSaving: boolean;
-  error: string | null;
-}
-
-function QuestionModal({ mode, question, allTags, allCategories, onSave, onClose, isSaving, error }: ModalProps) {
-  const [text, setText] = useState(question?.text ?? '');
-  const existingCategory = question?.category ?? '';
-  const isExisting = allCategories.includes(existingCategory);
-  const [categorySelect, setCategorySelect] = useState(
-    existingCategory && !isExisting ? '__new__' : existingCategory
-  );
-  const [newCategory, setNewCategory] = useState(existingCategory && !isExisting ? existingCategory : '');
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
-    question?.tags.map((t) => t.id) ?? []
-  );
-
-  const category = categorySelect === '__new__' ? newCategory.trim() : categorySelect;
-
-  const toggleTag = (id: string) => {
-    setSelectedTagIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave({ text: text.trim(), category: category.trim(), tagIds: selectedTagIds });
-  };
-
-  const canSubmit = text.trim().length > 0 && category.trim().length > 0;
-
-  return (
-    <div className="modal-backdrop">
-      <div className="modal-panel max-w-[560px]">
-        <h2 className="font-semibold text-xl text-graphite mb-6">
-          {mode === 'create' ? 'Create Question' : 'Edit Question'}
-        </h2>
-
-        <form onSubmit={handleSubmit}>
-          {/* Text */}
-          <div className="mb-5">
-            <label className="block font-medium text-sm text-graphite mb-1.5">
-              Question Text
-            </label>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              required
-              rows={4}
-              className="input-field text-sm block w-full resize-y"
-              placeholder="Enter question text…"
-            />
-          </div>
-
-          {/* Category */}
-          <div className="mb-5">
-            <label className="block font-medium text-sm text-graphite mb-1.5">
-              Category
-            </label>
-            <select
-              value={categorySelect}
-              onChange={(e) => setCategorySelect(e.target.value)}
-              required
-              className="input-field text-sm block w-full cursor-pointer"
-            >
-              <option value="" disabled>Select a category…</option>
-              {allCategories.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-              <option value="__new__">+ Add new category…</option>
-            </select>
-            {categorySelect === '__new__' && (
-              <input
-                type="text"
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-                autoFocus
-                className="input-field text-sm block w-full mt-2"
-                placeholder="Enter new category name…"
-              />
-            )}
-          </div>
-
-          {/* Tags */}
-          <div className="mb-6">
-            <label className="block font-medium text-sm text-graphite mb-1.5">
-              Tags
-            </label>
-            {allTags.length === 0 ? (
-              <p className="text-grey text-sm">No active tags available.</p>
-            ) : (
-              <div className="border border-ivory-tint rounded p-3 max-h-[220px] overflow-y-auto bg-ivory">
-                <div className="flex flex-wrap gap-2">
-                  {allTags.map((tag) => {
-                    const selected = selectedTagIds.includes(tag.id);
-                    return (
-                      <label
-                        key={tag.id}
-                        className={cn(
-                          'flex items-center gap-1.5 cursor-pointer py-[5px] px-3 rounded-md text-[13px] transition-all select-none',
-                          selected
-                            ? 'border-[1.5px] border-horizon-red bg-horizon-red/[0.07] text-horizon-red'
-                            : 'border-[1.5px] border-ivory-tint bg-white text-graphite'
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => toggleTag(tag.id)}
-                          className="hidden"
-                        />
-                        {tag.label}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {error && <div className="alert-error mb-4">{error}</div>}
-
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSaving}
-              className={cn('btn-secondary', isSaving && 'opacity-60')}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving || !canSubmit}
-              className={cn(
-                'btn-primary',
-                (isSaving || !canSubmit) && 'opacity-50 cursor-not-allowed'
-              )}
-            >
-              {isSaving ? 'Saving…' : 'Save Question'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // DeactivateWarningDialog
@@ -389,7 +212,7 @@ export default function QuestionBank() {
   const [showTagDropdown, setShowTagDropdown] = useState(false);
 
   // --- Sort state (client-side) ---
-  const [sortField, setSortField] = useState<'text' | 'category' | null>(null);
+  const [sortField, setSortField] = useState<'text' | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // --- Pagination: stack of 'after' cursors (null = first page) ---
@@ -400,8 +223,6 @@ export default function QuestionBank() {
   // --- Modal state ---
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
-  const [modalError, setModalError] = useState<string | null>(null);
-
   // --- Deactivate warning state ---
   const [deactivateTarget, setDeactivateTarget] = useState<Question | null>(null);
 
@@ -433,18 +254,10 @@ export default function QuestionBank() {
 
   const { data: tagsData, loading: tagsLoading } = useQuery<{ getTags: Tag[] }>(GET_TAGS);
 
-  const { data: categoriesData } = useQuery<{ getQuestions: { edges: { node: { category: string } }[] } }>(
-    GET_ALL_CATEGORIES
-  );
-  const allCategories = Array.from(
-    new Set((categoriesData?.getQuestions.edges ?? []).map((e) => e.node.category).filter(Boolean))
-  ).sort();
-
   // ---------------------------------------------------------------------------
   // Mutations
   // ---------------------------------------------------------------------------
 
-  const [createQuestion, { loading: creating }] = useMutation(CREATE_QUESTION);
   const [updateQuestion, { loading: updating }] = useMutation(UPDATE_QUESTION);
 
   // ---------------------------------------------------------------------------
@@ -493,7 +306,7 @@ export default function QuestionBank() {
     setCursorStack([null]);
   };
 
-  const handleSort = (field: 'text' | 'category') => {
+  const handleSort = (field: 'text') => {
     if (sortField === field) {
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -527,43 +340,18 @@ export default function QuestionBank() {
   const openCreate = () => {
     setEditingQuestion(null);
     setModalMode('create');
-    setModalError(null);
     setPageError(null);
   };
 
   const openEdit = (q: Question) => {
     setEditingQuestion(q);
     setModalMode('edit');
-    setModalError(null);
     setPageError(null);
   };
 
   const closeModal = () => {
     setModalMode(null);
     setEditingQuestion(null);
-    setModalError(null);
-  };
-
-  const handleModalSave = async ({
-    text,
-    category,
-    tagIds,
-  }: {
-    text: string;
-    category: string;
-    tagIds: string[];
-  }) => {
-    try {
-      if (modalMode === 'create') {
-        await createQuestion({ variables: { text, category, tagIds } });
-      } else if (editingQuestion) {
-        await updateQuestion({ variables: { id: editingQuestion.id, text, category, tagIds } });
-      }
-      closeModal();
-      void refetch();
-    } catch (err) {
-      setModalError((err as Error).message);
-    }
   };
 
   // ---------------------------------------------------------------------------
@@ -613,7 +401,7 @@ export default function QuestionBank() {
             Question Bank
           </h2>
           <p className="text-grey text-sm">
-            Manage interview questions, categories, and tag associations.
+            Manage interview questions and tag associations.
           </p>
         </div>
         <button onClick={openCreate} className="btn-primary">
@@ -765,9 +553,9 @@ export default function QuestionBank() {
             {/* Table */}
             <div className="bg-white rounded border border-ivory-tint overflow-hidden">
               {/* Table header */}
-              <div className="grid grid-cols-[2fr_130px_160px_100px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
-                {(['Question', 'Category', 'Tags', 'Status'] as const).map((h) => {
-                  const field = h === 'Question' ? 'text' : h === 'Category' ? 'category' : null;
+              <div className="grid grid-cols-[92px_2fr_200px_100px] py-2.5 px-[18px] border-b border-graphite/20 bg-graphite gap-3">
+                {(['Ref', 'Question', 'Tags', 'Status'] as const).map((h) => {
+                  const field = h === 'Question' ? 'text' : null;
                   const centered = h === 'Status';
                   const isSorted = field && sortField === field;
                   const arrow = isSorted ? (sortDir === 'asc' ? ' \u25B2' : ' \u25BC') : '';
@@ -794,22 +582,22 @@ export default function QuestionBank() {
                   key={q.id}
                   onClick={() => openEdit(q)}
                   className={cn(
-                    'grid grid-cols-[2fr_130px_160px_100px] py-[15px] px-[18px] items-start gap-3 cursor-pointer transition-colors duration-100 hover:bg-horizon-red/[0.03]',
+                    'grid grid-cols-[92px_2fr_200px_100px] py-[15px] px-[18px] items-start gap-3 cursor-pointer transition-colors duration-100 hover:bg-horizon-red/[0.03]',
                     i < questions.length - 1 && 'border-b border-ivory-tint',
                     !q.isActive ? 'bg-ivory-tint/35 opacity-70' : i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint'
                   )}
                 >
+                  {/* Reference ID */}
+                  <div className="pt-[2px]">
+                    <QuestionRefBadge displayNumber={q.displayNumber} />
+                  </div>
+
                   {/* Question text */}
                   <div
                     className="text-sm text-graphite leading-[1.55] overflow-hidden max-h-[4.65em]"
                     title={q.text}
                   >
                     {q.text}
-                  </div>
-
-                  {/* Category */}
-                  <div className="text-[13px] text-grey pt-px">
-                    {q.category}
                   </div>
 
                   {/* Tags */}
@@ -882,11 +670,8 @@ export default function QuestionBank() {
           mode={modalMode}
           question={editingQuestion}
           allTags={allTags}
-          allCategories={allCategories}
-          onSave={(data) => void handleModalSave(data)}
           onClose={closeModal}
-          isSaving={creating || updating}
-          error={modalError}
+          onSaved={() => void refetch()}
         />
       )}
 

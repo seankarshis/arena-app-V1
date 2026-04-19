@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useQuery, gql } from '@apollo/client';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -238,7 +239,7 @@ export default function InterviewManager() {
                           i < edges.length - 1 && 'border-b border-ivory-tint'
                         )}
                       >
-                        <div className="flex gap-8 flex-wrap">
+                        <div className="flex gap-8 flex-wrap items-end">
                           <div>
                             <span className="col-header block mb-1">Responses</span>
                             <span className="text-xl font-semibold text-graphite font-mono">
@@ -265,6 +266,15 @@ export default function InterviewManager() {
                             <span className="text-sm text-graphite font-mono">
                               {interview.costSummary.totalTtsCharacters.toLocaleString()}
                             </span>
+                          </div>
+                          <div className="ml-auto">
+                            <Link
+                              href={`/admin/interviews/${interview.id}`}
+                              className="btn-amber text-sm px-4 py-2 inline-block no-underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Session Review →
+                            </Link>
                           </div>
                         </div>
                       </div>

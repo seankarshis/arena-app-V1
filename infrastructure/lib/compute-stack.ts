@@ -4,6 +4,8 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaEvents from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import { Construct } from 'constructs';
@@ -19,6 +21,9 @@ export class ComputeStack extends cdk.Stack {
   public readonly cleaningDlq: sqs.Queue;
   public readonly cleaningLambda: lambda.Function;
   public readonly reconciliationLambda: lambda.Function;
+  public readonly enrichmentQueue: sqs.Queue;
+  public readonly enrichmentDlq: sqs.Queue;
+  public readonly enrichmentLambda: lambda.Function;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -97,6 +102,77 @@ export class ComputeStack extends cdk.Stack {
       schedule: events.Schedule.rate(cdk.Duration.minutes(15)),
     }).addTarget(new targets.LambdaFunction(this.reconciliationLambda));
 
+    // ── SQS: Enrichment Dead-Letter Queue ────────────────────────────
+    this.enrichmentDlq = new sqs.Queue(this, 'EnrichmentDlq', {
+      queueName: 'arena-enrichment-dlq',
+      retentionPeriod: cdk.Duration.days(14),
+    });
+
+    // ── SQS: Enrichment Queue ─────────────────────────────────────────
+    this.enrichmentQueue = new sqs.Queue(this, 'EnrichmentQueue', {
+      queueName: 'arena-enrichment-queue',
+      // Visibility timeout must exceed Lambda timeout (5 min → 6 min headroom)
+      visibilityTimeout: cdk.Duration.minutes(6),
+      deadLetterQueue: {
+        queue: this.enrichmentDlq,
+        maxReceiveCount: 3,
+      },
+    });
+
+    // ── Lambda: Enrichment Handler ────────────────────────────────────
+    const enrichmentLogGroup = new logs.LogGroup(this, 'EnrichmentLambdaLogs', {
+      logGroupName: '/aws/lambda/arena-enrichment',
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.enrichmentLambda = new lambda.Function(this, 'EnrichmentLambda', {
+      functionName: 'arena-enrichment',
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'enrichment-handler.handler',
+      code: lambda.Code.fromAsset(lambdaCodePath),
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      logGroup: enrichmentLogGroup,
+      environment: {
+        // ANTHROPIC_API_KEY is injected at runtime from Secrets Manager via
+        // the grant below; the env var name is set explicitly for clarity.
+        // DATABASE_URL is supplied via the shared VPC/SG pattern (set at deploy time).
+      },
+    });
+
+    // Grant Secrets Manager read access for arena/claude-api-key
+    const claudeApiKeySecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      'ClaudeApiKeySecret',
+      'arena/claude-api-key',
+    );
+    claudeApiKeySecret.grantRead(this.enrichmentLambda);
+
+    // Inject the secret value as ANTHROPIC_API_KEY via environment variable
+    // (resolved at deploy time by CDK; value comes from Secrets Manager)
+    this.enrichmentLambda.addEnvironment(
+      'ANTHROPIC_API_KEY',
+      claudeApiKeySecret.secretValue.unsafeUnwrap(),
+    );
+
+    // SQS triggers enrichment Lambda (batch size 1 to isolate per-message failures)
+    this.enrichmentLambda.addEventSource(
+      new lambdaEvents.SqsEventSource(this.enrichmentQueue, {
+        batchSize: 1,
+      }),
+    );
+
+    // IAM: allow enrichment Lambda to write ClickHouse OTLP telemetry
+    // (outbound HTTPS — no AWS IAM policy needed for external ClickHouse HTTP,
+    // but grant CloudWatch Logs write access for structured log output)
+    this.enrichmentLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+        resources: [enrichmentLogGroup.logGroupArn],
+      }),
+    );
+
     // ── Stack Outputs ─────────────────────────────────────────────────
     new cdk.CfnOutput(this, 'CleaningQueueUrl', {
       value: this.cleaningQueue.queueUrl,
@@ -106,6 +182,16 @@ export class ComputeStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CleaningDlqUrl', {
       value: this.cleaningDlq.queueUrl,
       description: 'Cleaning Dead-Letter Queue URL',
+    });
+
+    new cdk.CfnOutput(this, 'EnrichmentQueueUrl', {
+      value: this.enrichmentQueue.queueUrl,
+      description: 'Enrichment SQS Queue URL',
+    });
+
+    new cdk.CfnOutput(this, 'EnrichmentDlqUrl', {
+      value: this.enrichmentDlq.queueUrl,
+      description: 'Enrichment Dead-Letter Queue URL',
     });
   }
 }

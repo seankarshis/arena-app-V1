@@ -4,7 +4,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, gql } from '@apollo/client';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import TriggerEditor, { type FollowupTrigger } from './TriggerEditor';
+import {
+  QuestionModal,
+  type QuestionModalQuestion,
+  type QuestionModalTag,
+} from '@/components/admin/QuestionModal';
+import { QuestionRefBadge } from '@/components/ui/QuestionRefBadge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -13,23 +18,29 @@ import TriggerEditor, { type FollowupTrigger } from './TriggerEditor';
 interface Tag {
   id: string;
   label: string;
+  isActive: boolean;
 }
+
+type SensitivityLevel = 'STANDARD' | 'SENSITIVE' | 'HIGHLY_SENSITIVE';
 
 interface Question {
   id: string;
+  displayNumber: number;
   text: string;
-  category: string;
+  isActive: boolean;
+  intent: string | null;
+  sensitivityLevel: SensitivityLevel;
   tags: Tag[];
 }
 
-// Raw shape from GraphQL (followupTriggers is JSON scalar → unknown)
+// Raw shape from GraphQL
 interface RawTemplateQuestion {
   id: string;
   question: Question;
   sequenceOrder: number;
   categoryBucket: string;
   isRequired: boolean;
-  followupTriggers: unknown;
+  adminNotes: string | null;
 }
 
 interface RawInterviewTemplate {
@@ -48,7 +59,7 @@ interface TemplateQuestion {
   sequenceOrder: number;
   categoryBucket: string;
   isRequired: boolean;
-  followupTriggers: FollowupTrigger[];
+  adminNotes: string;
 }
 
 interface QuestionEdge {
@@ -84,12 +95,15 @@ const GET_TEMPLATE = gql`
         sequenceOrder
         categoryBucket
         isRequired
-        followupTriggers
+        adminNotes
         question {
           id
+          displayNumber
           text
-          category
-          tags { id label }
+          isActive
+          intent
+          sensitivityLevel
+          tags { id label isActive }
         }
       }
     }
@@ -125,9 +139,12 @@ const GET_ACTIVE_QUESTIONS = gql`
         cursor
         node {
           id
+          displayNumber
           text
-          category
-          tags { id label }
+          isActive
+          intent
+          sensitivityLevel
+          tags { id label isActive }
         }
       }
       pageInfo { hasNextPage endCursor }
@@ -143,7 +160,6 @@ const ADD_QUESTION = gql`
     $sequenceOrder: Int!
     $categoryBucket: String!
     $isRequired: Boolean
-    $followupTriggers: JSON
   ) {
     addQuestionToTemplate(
       templateId: $templateId
@@ -151,14 +167,13 @@ const ADD_QUESTION = gql`
       sequenceOrder: $sequenceOrder
       categoryBucket: $categoryBucket
       isRequired: $isRequired
-      followupTriggers: $followupTriggers
     ) {
       id
       sequenceOrder
       categoryBucket
       isRequired
-      followupTriggers
-      question { id text category tags { id label } }
+      adminNotes
+      question { id displayNumber text isActive intent sensitivityLevel tags { id label isActive } }
     }
   }
 `;
@@ -169,20 +184,20 @@ const UPDATE_TQ = gql`
     $sequenceOrder: Int
     $categoryBucket: String
     $isRequired: Boolean
-    $followupTriggers: JSON
+    $adminNotes: String
   ) {
     updateTemplateQuestion(
       id: $id
       sequenceOrder: $sequenceOrder
       categoryBucket: $categoryBucket
       isRequired: $isRequired
-      followupTriggers: $followupTriggers
+      adminNotes: $adminNotes
     ) {
       id
       sequenceOrder
       categoryBucket
       isRequired
-      followupTriggers
+      adminNotes
     }
   }
 `;
@@ -202,26 +217,16 @@ const REMOVE_QUESTION = gql`
   }
 `;
 
-const CREATE_QUESTION = gql`
-  mutation BuilderCreateQuestion($text: String!, $category: String!) {
-    createQuestion(text: $text, category: $category) {
-      id
-      text
-      category
-      isActive
-      tags { id label }
-    }
+const GET_ALL_TAGS = gql`
+  query BuilderGetAllTags {
+    getTags { id label isActive }
   }
 `;
+
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function parseTriggers(raw: unknown): FollowupTrigger[] {
-  if (!Array.isArray(raw)) return [];
-  return raw as FollowupTrigger[];
-}
 
 function sortedByOrder(qs: TemplateQuestion[]): TemplateQuestion[] {
   return [...qs].sort((a, b) => a.sequenceOrder - b.sequenceOrder);
@@ -234,9 +239,8 @@ function sortedByOrder(qs: TemplateQuestion[]): TemplateQuestion[] {
 const STEPS = [
   'Template Info',
   'Select Questions',
-  'Follow-up Triggers',
-  'Required / Optional',
-  'Preview',
+  'Admin Notes',
+  'Review & Order',
   'Publish',
 ];
 
@@ -315,19 +319,14 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   const [bankAfterCursor, setBankAfterCursor] = useState<string | null>(null);
   const bankSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Step 3: trigger editor
-  const [openTriggerFor, setOpenTriggerFor] = useState<string | null>(null);
-  const [savingTriggersFor, setSavingTriggersFor] = useState<string | null>(null);
-  const [triggerBankDebouncedSearch, setTriggerBankDebouncedSearch] = useState('');
-  const triggerBankSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [addingExternalQuestion, setAddingExternalQuestion] = useState(false);
+  // Step 3: admin notes
+  const [savingNotesFor, setSavingNotesFor] = useState<string | null>(null);
+  const [localAdminNotes, setLocalAdminNotes] = useState<Record<string, string>>({});
 
-  // Step 4: toggling required
+  // Step 4: review & order (reorder reuses Step 2 DnD handlers; toggle required)
   const [togglingRequired, setTogglingRequired] = useState<string | null>(null);
-
-  // Step 5: preview
-  const [collapsedBuckets, setCollapsedBuckets] = useState<Set<string>>(new Set());
-  const [previewMode, setPreviewMode] = useState<'category' | 'order'>('category');
+  const [editingQuestion, setEditingQuestion] =
+    useState<QuestionModalQuestion | null>(null);
 
   // General / publish
   const [pageError, setPageError] = useState<string | null>(null);
@@ -348,6 +347,8 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     fetchPolicy: 'cache-and-network',
   });
 
+  const { data: tagsData } = useQuery<{ getTags: Tag[] }>(GET_ALL_TAGS);
+
   const { data: bankData, loading: bankLoading } = useQuery<{
     getQuestions: QuestionConnection;
   }>(GET_ACTIVE_QUESTIONS, {
@@ -356,18 +357,6 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
       first: BANK_PAGE_SIZE,
       after: bankAfterCursor,
       filters: bankDebouncedSearch ? { searchText: bankDebouncedSearch } : undefined,
-    },
-    fetchPolicy: 'cache-and-network',
-  });
-
-  // Step 3: question bank search for trigger targets
-  const { data: triggerBankData, loading: triggerBankLoading } = useQuery<{
-    getQuestions: QuestionConnection;
-  }>(GET_ACTIVE_QUESTIONS, {
-    skip: currentStep !== 3 || !triggerBankDebouncedSearch,
-    variables: {
-      first: 10,
-      filters: { searchText: triggerBankDebouncedSearch },
     },
     fetchPolicy: 'cache-and-network',
   });
@@ -381,7 +370,6 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   const [updateTQ] = useMutation(UPDATE_TQ);
   const [reorderTQs] = useMutation(REORDER_TQS);
   const [removeQuestion] = useMutation(REMOVE_QUESTION);
-  const [createQuestion, { loading: creatingQuestion }] = useMutation(CREATE_QUESTION);
 
   // ---------------------------------------------------------------------------
   // Sync from API
@@ -396,10 +384,13 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     const sorted = sortedByOrder(
       tpl.questions.map((q) => ({
         ...q,
-        followupTriggers: parseTriggers(q.followupTriggers),
+        adminNotes: q.adminNotes ?? '',
       }))
     );
     setLocalQuestions(sorted);
+    setLocalAdminNotes(
+      Object.fromEntries(sorted.map((q) => [q.id, q.adminNotes]))
+    );
   }, [templateData]);
 
   // ---------------------------------------------------------------------------
@@ -407,6 +398,7 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   // ---------------------------------------------------------------------------
 
   const template = templateData?.getTemplate ?? null;
+  const allTags: QuestionModalTag[] = tagsData?.getTags ?? [];
   const bankQuestions = bankData?.getQuestions?.edges.map((e) => e.node) ?? [];
   const bankPageInfo = bankData?.getQuestions?.pageInfo;
   const bankTotalCount = bankData?.getQuestions?.totalCount ?? 0;
@@ -459,9 +451,8 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
           templateId,
           questionId: q.id,
           sequenceOrder: localQuestions.length + 1,
-          categoryBucket: q.category,
+          categoryBucket: 'Uncategorized',
           isRequired: false,
-          followupTriggers: [],
         },
       });
       void refetchTemplate();
@@ -525,107 +516,17 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
   // Step 3 handlers
   // ---------------------------------------------------------------------------
 
-  const handleSaveTriggers = async (tqId: string, triggers: FollowupTrigger[]) => {
-    setSavingTriggersFor(tqId);
+  const handleSaveAdminNotes = async (tqId: string, notes: string) => {
+    setSavingNotesFor(tqId);
     try {
-      await updateTQ({ variables: { id: tqId, followupTriggers: triggers } });
+      await updateTQ({ variables: { id: tqId, adminNotes: notes } });
       setLocalQuestions((prev) =>
-        prev.map((q) => (q.id === tqId ? { ...q, followupTriggers: triggers } : q))
+        prev.map((q) => (q.id === tqId ? { ...q, adminNotes: notes } : q))
       );
     } catch (err) {
       setPageError((err as Error).message);
     } finally {
-      setSavingTriggersFor(null);
-    }
-  };
-
-  const handleTriggerBankSearch = (searchText: string) => {
-    if (triggerBankSearchTimer.current) clearTimeout(triggerBankSearchTimer.current);
-    triggerBankSearchTimer.current = setTimeout(() => {
-      setTriggerBankDebouncedSearch(searchText);
-    }, 300);
-  };
-
-  const handleSelectBankQuestion = async (
-    question: { id: string; text: string; category: string },
-  ): Promise<string | null> => {
-    // Use ref to read latest state (avoids stale closure after create)
-    const current = localQuestionsRef.current;
-
-    // Already in template? Return existing TQ id
-    const existingTQ = current.find((tq) => tq.question.id === question.id);
-    if (existingTQ) return existingTQ.id;
-
-    // Add to template as optional
-    setAddingExternalQuestion(true);
-    try {
-      const result = await addQuestion({
-        variables: {
-          templateId,
-          questionId: question.id,
-          sequenceOrder: current.length + 1,
-          categoryBucket: question.category,
-          isRequired: false,
-          followupTriggers: [],
-        },
-      });
-      const newTQ = result.data.addQuestionToTemplate;
-      setLocalQuestions((prev) => [
-        ...prev,
-        {
-          id: newTQ.id,
-          question: { id: question.id, text: question.text, category: question.category, tags: [] },
-          sequenceOrder: prev.length + 1,
-          categoryBucket: question.category,
-          isRequired: false,
-          followupTriggers: parseTriggers(newTQ.followupTriggers),
-        },
-      ]);
-      return newTQ.id;
-    } catch (err) {
-      setPageError((err as Error).message);
-      return null;
-    } finally {
-      setAddingExternalQuestion(false);
-    }
-  };
-
-  const handleCreateQuestionForTrigger = async (
-    data: { text: string; category: string },
-  ): Promise<string | null> => {
-    try {
-      const createResult = await createQuestion({
-        variables: { text: data.text, category: data.category },
-      });
-      const newQ = createResult.data.createQuestion;
-      const current = localQuestionsRef.current;
-
-      const addResult = await addQuestion({
-        variables: {
-          templateId,
-          questionId: newQ.id,
-          sequenceOrder: current.length + 1,
-          categoryBucket: data.category,
-          isRequired: false,
-          followupTriggers: [],
-        },
-      });
-      const newTQ = addResult.data.addQuestionToTemplate;
-      setLocalQuestions((prev) => [
-        ...prev,
-        {
-          id: newTQ.id,
-          question: { id: newQ.id, text: newQ.text, category: newQ.category, tags: newQ.tags ?? [] },
-          sequenceOrder: prev.length + 1,
-          categoryBucket: data.category,
-          isRequired: false,
-          followupTriggers: [],
-        },
-      ]);
-      return newTQ.id;
-    } catch (err) {
-      setPageError((err as Error).message);
-      return null;
+      setSavingNotesFor(null);
     }
   };
 
@@ -842,9 +743,6 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
                         {q.text.length > 110 ? q.text.slice(0, 110) + '\u2026' : q.text}
                       </p>
                       <div className="flex gap-1.5 flex-wrap">
-                        <span className="text-2xs text-grey italic">
-                          {q.category}
-                        </span>
                         {q.tags.slice(0, 3).map((t) => (
                           <span
                             key={t.id}
@@ -939,98 +837,108 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     </div>
   );
 
-  const renderStep4 = () => (
+  const renderStep3 = () => (
     <div className="py-6">
-      <p className="text-grey text-sm mb-5">
-        Configure follow-up trigger conditions for each question. Click a question row
-        to open the trigger editor.
-      </p>
+      <div className="flex justify-between items-center mb-4">
+        <p className="text-grey text-sm">
+          Add free-text guidance for the AI interviewer, per question. These notes
+          are never shown to interviewees.
+        </p>
+        <div className="flex gap-2 shrink-0 ml-4">
+          <button
+            onClick={() => setCurrentStep((s) => Math.max(1, s - 1))}
+            className="btn-primary py-1.5 px-3 text-xs"
+          >
+            {'\u2190'} Back
+          </button>
+          <button
+            onClick={() => setCurrentStep((s) => Math.min(STEPS.length, s + 1))}
+            className="btn-primary py-1.5 px-3 text-xs"
+          >
+            Next {'\u2192'}
+          </button>
+        </div>
+      </div>
 
       {localQuestions.length === 0 ? (
         <p className="text-grey text-sm">
           No questions selected. Go to Step 2 to add questions.
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-4">
           {localQuestions.map((tq, idx) => {
-            const isOpen = openTriggerFor === tq.id;
-            const isSavingThis = savingTriggersFor === tq.id;
-            const targets = localQuestions
-              .filter((q) => q.id !== tq.id)
-              .map((q) => ({
-                id: q.id,
-                questionText: q.question.text,
-                sequenceOrder:
-                  localQuestions.findIndex((lq) => lq.id === q.id) + 1,
-              }));
+            const isSavingThis = savingNotesFor === tq.id;
+            const notes = localAdminNotes[tq.id] ?? '';
+            const isLegacyImport = notes.startsWith('Legacy triggers:');
+            const MAX_NOTES = 4000;
 
             return (
               <div
                 key={tq.id}
-                className={cn(
-                  'bg-white rounded border overflow-hidden',
-                  isOpen ? 'border-horizon-red' : 'border-ivory-tint',
-                )}
+                className="bg-white rounded border border-ivory-tint overflow-hidden"
               >
-                <div
-                  onClick={() => setOpenTriggerFor(isOpen ? null : tq.id)}
-                  className={cn(
-                    'flex items-center gap-3 py-3 px-4 cursor-pointer',
-                    isOpen ? 'bg-horizon-red/[0.03]' : 'bg-white hover:bg-ivory',
-                  )}
-                >
+                <div className="flex items-center gap-3 py-3 px-4 bg-ivory border-b border-ivory-tint">
                   <span className="text-grey text-2xs font-mono min-w-[20px] shrink-0">
                     {idx + 1}
                   </span>
-                  <span className="flex-1 text-[13px] text-graphite">
+                  <QuestionRefBadge displayNumber={tq.question.displayNumber} />
+                  <span className="flex-1 text-[13px] text-graphite font-medium leading-snug">
                     {tq.question.text.length > 120
                       ? tq.question.text.slice(0, 120) + '\u2026'
                       : tq.question.text}
                   </span>
-                  <span
-                    className={cn(
-                      'text-xs shrink-0',
-                      tq.followupTriggers.length > 0 ? 'text-horizon-red' : 'text-grey',
-                    )}
-                  >
-                    {tq.followupTriggers.length} trigger
-                    {tq.followupTriggers.length !== 1 ? 's' : ''}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-2xs',
-                      isOpen ? 'text-horizon-red' : 'text-grey',
-                    )}
-                  >
-                    {isOpen ? '\u25b2' : '\u25bc'}
-                  </span>
                 </div>
 
-                {isOpen && (
-                  <div className="px-4 pb-4">
-                    <TriggerEditor
-                      currentTriggers={tq.followupTriggers}
-                      availableTargets={targets}
-                      onSave={(triggers) =>
-                        void handleSaveTriggers(tq.id, triggers)
+                <div className="px-4 pb-4 pt-3">
+                  {tq.question.intent && (
+                    <div className="mb-4 rounded border border-ivory-tint bg-ivory/60 px-3 py-2.5">
+                      <div className="text-grey text-[11px] uppercase tracking-wide font-medium mb-1">
+                        This question&rsquo;s global briefing (edit in Question Bank)
+                      </div>
+                      <p className="text-[13px] text-graphite leading-relaxed whitespace-pre-wrap">
+                        {tq.question.intent}
+                      </p>
+                    </div>
+                  )}
+                  <label className="block font-medium text-sm text-graphite mb-1">
+                    Admin Notes
+                  </label>
+                  <p className="text-grey text-xs mb-2 leading-relaxed">
+                    Free-text guidance for the interviewer LLM — e.g., &lsquo;Follow up if
+                    response mentions legacy systems.&rsquo; Plain prose, not keyword
+                    matching. Interviewees never see this.
+                  </p>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => {
+                      const val = e.target.value.slice(0, MAX_NOTES);
+                      setLocalAdminNotes((prev) => ({ ...prev, [tq.id]: val }));
+                    }}
+                    onBlur={() => {
+                      if (notes !== tq.adminNotes) {
+                        void handleSaveAdminNotes(tq.id, notes);
                       }
-                      bankResults={
-                        triggerBankData?.getQuestions?.edges.map((e) => ({
-                          id: e.node.id,
-                          text: e.node.text,
-                          category: e.node.category,
-                        })) ?? []
-                      }
-                      bankLoading={triggerBankLoading}
-                      onBankSearch={handleTriggerBankSearch}
-                      onSelectBankQuestion={handleSelectBankQuestion}
-                      onCreateQuestion={handleCreateQuestionForTrigger}
-                      addingExternalQuestion={addingExternalQuestion}
-                      creatingQuestion={creatingQuestion}
-                      templateQuestionIds={addedQuestionIds}
-                    />
+                    }}
+                    rows={5}
+                    maxLength={MAX_NOTES}
+                    className="input-field text-sm resize-y w-full mb-1"
+                    placeholder="E.g. If the candidate mentions a legacy monolith, probe for migration experience before moving on."
+                    disabled={isSavingThis}
+                  />
+                  <div className="flex items-center justify-between">
+                    <span className="text-grey text-xs">
+                      {notes.length} / {MAX_NOTES}
+                    </span>
+                    {isSavingThis && (
+                      <span className="text-grey text-xs italic">Saving...</span>
+                    )}
                   </div>
-                )}
+                  {isLegacyImport && (
+                    <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                      Imported from legacy triggers — review and refine.
+                    </p>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -1039,26 +947,31 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     </div>
   );
 
-  const renderStep5 = () => (
+  const renderReviewStep = () => (
     <div className="py-6">
-      {/* Summary badges */}
-      <div className="flex gap-3 mb-5">
-        <div className="py-2.5 px-4 rounded bg-ivory-tint border border-ivory-tint">
-          <span className="font-bold text-graphite text-[15px]">
-            {requiredCount}
+      <div className="flex items-center gap-4 mb-5">
+        <span className="text-graphite text-sm">
+          <span className="font-bold">{localQuestions.length}</span>{' '}
+          question{localQuestions.length !== 1 ? 's' : ''}
+        </span>
+        <span className="text-graphite text-sm">
+          <span className="font-bold">{requiredCount}</span> required
+        </span>
+        <span className="text-grey text-sm">
+          <span className="font-bold">{optionalCount}</span> optional
+        </span>
+        <span className="relative inline-flex group">
+          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-graphite text-[10px] font-semibold text-graphite cursor-default shrink-0 select-none">
+            ?
           </span>
-          <span className="text-graphite text-[13px] ml-1.5">
-            Required
+          <span className="hidden group-hover:block absolute left-[22px] top-1/2 -translate-y-1/2 bg-[#1f2937] text-[#f9fafb] text-xs leading-snug py-1.5 px-2.5 rounded-md w-[230px] whitespace-normal z-[100] pointer-events-none">
+            <span className="block"><span className="font-semibold">Required:</span> AI must cover to end interview.</span>
+            <span className="block mt-0.5"><span className="font-semibold">Optional:</span> AI may skip.</span>
           </span>
-        </div>
-        <div className="py-2.5 px-4 rounded bg-ivory border border-ivory-tint">
-          <span className="font-bold text-graphite text-[15px]">
-            {optionalCount}
-          </span>
-          <span className="text-grey text-[13px] ml-1.5">
-            Optional
-          </span>
-        </div>
+        </span>
+        {isSavingOrder && (
+          <span className="text-grey text-xs italic ml-auto">Saving order...</span>
+        )}
       </div>
 
       {localQuestions.length === 0 ? (
@@ -1066,47 +979,93 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
           No questions selected. Go to Step 2 to add questions.
         </p>
       ) : (
-        <div className="bg-white rounded border border-ivory-tint overflow-hidden">
-          <div className="grid grid-cols-[36px_1fr_150px] py-2.5 px-4 bg-graphite border-b border-graphite/20 gap-3">
-            {['#', 'Question', 'Required?'].map((h) => (
-              <span key={h} className="col-header">
-                {h}
-              </span>
-            ))}
-          </div>
-
-          {localQuestions.map((tq, i) => {
+        <div className="flex flex-col gap-3">
+          {localQuestions.map((tq, idx) => {
             const isToggling = togglingRequired === tq.id;
             return (
               <div
                 key={tq.id}
+                draggable
+                onDragStart={() => handleDragStart(idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDrop={() => void handleDrop(idx)}
+                onDragEnd={handleDragEnd}
                 className={cn(
-                  'grid grid-cols-[36px_1fr_150px] py-3.5 px-4 items-center gap-3 transition-colors duration-100 hover:bg-horizon-red/[0.03]',
-                  i < localQuestions.length - 1 && 'border-b border-ivory-tint',
-                  i % 2 === 0 ? 'bg-white' : 'bg-ivory-tint',
+                  'bg-white rounded-md border shadow-sm overflow-hidden transition-colors duration-100',
+                  dragOverIdx === idx
+                    ? 'border-horizon-red border-l-2 border-l-horizon-red'
+                    : 'border-ivory-tint',
                 )}
               >
-                <span className="text-xs text-grey font-mono">
-                  {i + 1}
-                </span>
-                <p className="text-[13px] text-graphite leading-[1.4]">
-                  {tq.question.text.length > 140
-                    ? tq.question.text.slice(0, 140) + '\u2026'
-                    : tq.question.text}
-                </p>
-                <button
-                  onClick={() => void handleToggleRequired(tq.id, tq.isRequired)}
-                  disabled={isToggling}
-                  className={cn(
-                    'py-[5px] px-3.5 rounded-md border-none text-xs font-semibold font-primary transition-all duration-150',
-                    tq.isRequired
-                      ? 'bg-horizon-red/10 text-horizon-red'
-                      : 'bg-ivory-tint text-grey',
-                    isToggling ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
-                  )}
-                >
-                  {tq.isRequired ? 'Required' : 'Optional'}
-                </button>
+                <div className="flex items-center gap-3 py-3 px-4">
+                  <span
+                    className="text-grey text-base select-none cursor-grab shrink-0 leading-none"
+                    title="Drag to reorder"
+                    aria-label="Drag to reorder"
+                  >
+                    &#x2807;
+                  </span>
+                  <span className="text-grey text-2xs font-mono min-w-[24px] shrink-0">
+                    #{idx + 1}
+                  </span>
+                  <QuestionRefBadge displayNumber={tq.question.displayNumber} />
+                  <p className="flex-1 text-[13px] text-graphite font-medium leading-snug">
+                    {tq.question.text}
+                  </p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => void handleToggleRequired(tq.id, tq.isRequired)}
+                      disabled={isToggling}
+                      className={cn(
+                        'group relative py-[5px] px-3 rounded-md border-none text-xs font-semibold font-primary whitespace-nowrap min-w-[92px] transition-all duration-150',
+                        tq.isRequired
+                          ? 'bg-horizon-red/10 text-horizon-red hover:bg-horizon-red/15'
+                          : 'bg-ivory-tint text-grey hover:bg-ivory-tint/80',
+                        isToggling ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
+                      )}
+                    >
+                      <span className="group-hover:invisible">
+                        {tq.isRequired ? 'Required' : 'Optional'}
+                      </span>
+                      <span className="invisible group-hover:visible absolute inset-0 flex items-center justify-center whitespace-nowrap">
+                        {tq.isRequired ? '\u2192 Optional' : '\u2192 Required'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingQuestion(tq.question)}
+                      className="text-xs text-horizon-red hover:underline inline-flex items-center gap-0.5 bg-transparent border-none cursor-pointer py-[5px]"
+                      title="Edit this question"
+                    >
+                      Edit question
+                    </button>
+                  </div>
+                </div>
+
+                {(tq.question.intent || tq.adminNotes) && (
+                  <div className="px-4 pb-3 pt-1 flex flex-col gap-2.5">
+                    {tq.question.intent && (
+                      <div className="rounded border border-ivory-tint bg-ivory/60 px-3 py-2">
+                        <div className="text-grey text-[11px] uppercase tracking-wide font-medium mb-1">
+                          Global briefing (edit in Question Bank)
+                        </div>
+                        <p className="text-[13px] text-graphite leading-relaxed whitespace-pre-wrap">
+                          {tq.question.intent}
+                        </p>
+                      </div>
+                    )}
+                    {tq.adminNotes && (
+                      <div className="rounded border border-ivory-tint bg-ivory/60 px-3 py-2">
+                        <div className="text-grey text-[11px] uppercase tracking-wide font-medium mb-1">
+                          This template&rsquo;s notes (edit in Step 3)
+                        </div>
+                        <p className="text-[13px] text-graphite leading-relaxed whitespace-pre-wrap">
+                          {tq.adminNotes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1114,176 +1073,6 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
       )}
     </div>
   );
-
-  const renderStep6 = () => {
-    // Group questions by bucket (preserve order)
-    const bucketOrder: string[] = [];
-    const buckets: Record<string, TemplateQuestion[]> = {};
-    for (const tq of localQuestions) {
-      if (!buckets[tq.categoryBucket]) {
-        bucketOrder.push(tq.categoryBucket);
-        buckets[tq.categoryBucket] = [];
-      }
-      buckets[tq.categoryBucket].push(tq);
-    }
-
-    const renderQuestionCard = (tq: TemplateQuestion) => {
-      const seqNum = localQuestions.findIndex((q) => q.id === tq.id) + 1;
-      return (
-        <div key={tq.id} className="py-3.5 px-[18px] border-t border-ivory-tint">
-          <div
-            className={cn(
-              'flex items-start gap-2.5',
-              tq.followupTriggers.length > 0 && 'mb-2.5',
-            )}
-          >
-            <span className="text-2xs text-grey font-mono min-w-[24px] mt-[3px] shrink-0">
-              #{seqNum}
-            </span>
-            <div className="flex-1">
-              <p className="text-sm text-graphite leading-normal mb-1.5">
-                {tq.question.text}
-              </p>
-              <span
-                className={cn(
-                  'py-[5px] px-3.5 rounded-md text-xs font-semibold',
-                  tq.isRequired
-                    ? 'bg-horizon-red/10 text-horizon-red'
-                    : 'bg-ivory-tint text-grey',
-                )}
-              >
-                {tq.isRequired ? 'Required' : 'Optional'}
-              </span>
-            </div>
-          </div>
-
-          {tq.followupTriggers.length > 0 && (
-            <div className="ml-[34px] flex flex-col gap-[5px]">
-              {tq.followupTriggers.map((trigger, ti) => {
-                const targetTexts = trigger.targetTemplateQuestionIds
-                  .map((id) => {
-                    const found = localQuestions.find((q) => q.id === id);
-                    if (!found) return null;
-                    return found.question.text;
-                  })
-                  .filter((s): s is string => s !== null);
-
-                return (
-                  <div
-                    key={ti}
-                    className="text-xs text-grey py-1.5 px-2.5 rounded-md bg-ivory border border-ivory-tint"
-                  >
-                    <strong className="capitalize text-graphite">
-                      {trigger.type}
-                    </strong>
-                    {trigger.type === 'keyword' &&
-                      trigger.keywords &&
-                      ` \u2014 "${trigger.keywords}"`}
-                    {trigger.type === 'sentiment' &&
-                      trigger.sentiment &&
-                      ` \u2014 ${trigger.sentiment}`}
-                    {trigger.type === 'length' &&
-                      trigger.lengthDescription &&
-                      ` \u2014 ${trigger.lengthDescription}`}
-                    {targetTexts.length > 0 && (
-                      <span className="block mt-[3px] text-grey text-2xs">
-                        {'\u2192'} {targetTexts.join(', ')}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      );
-    };
-
-    return (
-      <div className="py-6">
-        <div className="flex items-center justify-between mb-5">
-          <p className="text-grey text-sm">
-            Review the full interview flow before publishing.
-          </p>
-          <div className="flex rounded-md border border-ivory-tint overflow-hidden">
-            <button
-              onClick={() => setPreviewMode('order')}
-              className={cn(
-                'py-1.5 px-3.5 text-xs font-semibold border-none cursor-pointer font-primary transition-colors',
-                previewMode === 'order'
-                  ? 'bg-graphite text-white'
-                  : 'bg-white text-graphite hover:bg-ivory-tint',
-              )}
-            >
-              By Order
-            </button>
-            <button
-              onClick={() => setPreviewMode('category')}
-              className={cn(
-                'py-1.5 px-3.5 text-xs font-semibold border-none cursor-pointer font-primary transition-colors border-l border-ivory-tint',
-                previewMode === 'category'
-                  ? 'bg-graphite text-white'
-                  : 'bg-white text-graphite hover:bg-ivory-tint',
-              )}
-            >
-              By Category
-            </button>
-          </div>
-        </div>
-
-        {localQuestions.length === 0 ? (
-          <p className="text-grey text-sm">
-            No questions in this template yet.
-          </p>
-        ) : previewMode === 'order' ? (
-          <div className="bg-white rounded-[10px] border border-ivory-tint overflow-hidden">
-            {localQuestions.map((tq) => renderQuestionCard(tq))}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {bucketOrder.map((bucket) => {
-              const qs = buckets[bucket];
-              const isCollapsed = collapsedBuckets.has(bucket);
-
-              return (
-                <div
-                  key={bucket}
-                  className="bg-white rounded-[10px] border border-ivory-tint overflow-hidden"
-                >
-                  {/* Bucket header */}
-                  <button
-                    onClick={() => {
-                      setCollapsedBuckets((prev) => {
-                        const next = new Set(prev);
-                        isCollapsed ? next.delete(bucket) : next.add(bucket);
-                        return next;
-                      });
-                    }}
-                    className="flex items-center justify-between w-full py-3.5 px-[18px] border-none bg-ivory cursor-pointer font-primary"
-                  >
-                    <span className="font-semibold text-[15px] text-graphite">
-                      {bucket}
-                    </span>
-                    <span className="flex items-center gap-3">
-                      <span className="text-xs text-grey">
-                        {qs.length} question{qs.length !== 1 ? 's' : ''}
-                      </span>
-                      <span className="text-grey text-2xs">
-                        {isCollapsed ? '\u25b6' : '\u25bc'}
-                      </span>
-                    </span>
-                  </button>
-
-                  {/* Bucket questions */}
-                  {!isCollapsed && qs.map((tq) => renderQuestionCard(tq))}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   const renderStep7 = () => {
     const status = template?.status ?? 'draft';
@@ -1445,10 +1234,9 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
     switch (currentStep) {
       case 1: return renderStep1();
       case 2: return renderStep2();
-      case 3: return renderStep4();
-      case 4: return renderStep5();
-      case 5: return renderStep6();
-      case 6: return renderStep7();
+      case 3: return renderStep3();
+      case 4: return renderReviewStep();
+      case 5: return renderStep7();
       default: return null;
     }
   };
@@ -1523,6 +1311,19 @@ export default function TemplateBuilder({ templateId }: { templateId: string }) 
           </button>
         </div>
       </div>
+
+      {editingQuestion && (
+        <QuestionModal
+          mode="edit"
+          question={editingQuestion}
+          allTags={allTags}
+          onClose={() => setEditingQuestion(null)}
+          onSaved={() => {
+            void refetchTemplate();
+            setEditingQuestion(null);
+          }}
+        />
+      )}
     </div>
   );
 }

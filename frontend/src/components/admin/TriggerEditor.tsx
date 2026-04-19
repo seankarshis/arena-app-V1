@@ -1,3 +1,4 @@
+// Deprecated: replaced by adminNotes textarea in TemplateBuilder.tsx as of ADR 007. Safe to delete after one release cycle.
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';

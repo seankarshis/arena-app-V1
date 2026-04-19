@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, type ElementType } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useApolloClient } from '@apollo/client';
+import { useApolloClient, useQuery, gql } from '@apollo/client';
 import { logout, getUser } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import {
@@ -13,6 +13,7 @@ import {
   Tags,
   Users,
   Mic,
+  Flag,
   PanelLeftClose,
   PanelLeftOpen,
   Menu,
@@ -24,14 +25,30 @@ import {
 // Nav items
 // ---------------------------------------------------------------------------
 
-const NAV_ITEMS: { label: string; href: string; icon: ElementType }[] = [
+const NAV_ITEMS: { label: string; href: string; icon: ElementType; showBadge?: boolean }[] = [
   { label: 'DASHBOARD', href: '/admin', icon: LayoutDashboard },
   { label: 'TEMPLATES', href: '/admin/templates', icon: FileText },
   { label: 'QUESTIONS', href: '/admin/questions', icon: MessageCircleQuestion },
   { label: 'TAGS', href: '/admin/tags', icon: Tags },
   { label: 'USERS', href: '/admin/users', icon: Users },
   { label: 'INTERVIEWS', href: '/admin/interviews', icon: Mic },
+  { label: 'FLAGGED ITEMS', href: '/admin/flagged-items', icon: Flag, showBadge: true },
 ];
+
+// ---------------------------------------------------------------------------
+// Pending flagged items count query
+// ---------------------------------------------------------------------------
+
+const FLAGGED_PENDING_COUNT_QUERY = gql`
+  query AdminFlaggedPendingCount {
+    pending: flaggedItems(status: pending, limit: 50, offset: 0) {
+      id
+    }
+    reviewed: flaggedItems(status: reviewed, limit: 50, offset: 0) {
+      id
+    }
+  }
+`;
 
 const LS_KEY = 'arena-sidebar-collapsed';
 
@@ -44,6 +61,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const client = useApolloClient();
   const [username, setUsername] = useState<string | null>(null);
+
+  // Pending + reviewed flagged items count for nav badge
+  const { data: flaggedCountData } = useQuery<{
+    pending: { id: string }[];
+    reviewed: { id: string }[];
+  }>(FLAGGED_PENDING_COUNT_QUERY, {
+    fetchPolicy: 'cache-and-network',
+    errorPolicy: 'ignore',
+  });
+  const flaggedBadgeCount =
+    (flaggedCountData?.pending?.length ?? 0) +
+    (flaggedCountData?.reviewed?.length ?? 0);
 
   // Sidebar state
   const [collapsed, setCollapsed] = useState(false);
@@ -192,6 +221,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {NAV_ITEMS.map((item) => {
             const active = isActive(item.href);
             const Icon = item.icon;
+            const badgeCount = item.showBadge ? flaggedBadgeCount : 0;
             return (
               <Link
                 key={item.href}
@@ -212,7 +242,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 )}
               >
                 <Icon size={18} className="shrink-0" />
-                {!isCollapsed && <span>{item.label}</span>}
+                {!isCollapsed && (
+                  <>
+                    <span className="flex-1">{item.label}</span>
+                    {badgeCount > 0 && (
+                      <span
+                        aria-label={`${badgeCount} items need review`}
+                        className="ml-auto shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-horizon-red text-white text-[10px] font-semibold flex items-center justify-center leading-none"
+                      >
+                        {badgeCount > 99 ? '99+' : badgeCount}
+                      </span>
+                    )}
+                  </>
+                )}
               </Link>
             );
           })}

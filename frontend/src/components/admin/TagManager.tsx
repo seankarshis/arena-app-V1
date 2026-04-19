@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, gql } from '@apollo/client';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -196,9 +197,17 @@ export default function TagManager() {
             Manage the controlled vocabulary of tags used across questions and users.
           </p>
         </div>
-        <button onClick={openCreate} className="btn-primary">
-          + New Tag
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/admin/tags/normalization-queue"
+            className="btn-secondary text-sm"
+          >
+            Normalization Queue
+          </Link>
+          <button onClick={openCreate} className="btn-primary">
+            + New Tag
+          </button>
+        </div>
       </header>
 
       {/* Content */}
