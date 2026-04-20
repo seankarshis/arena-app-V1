@@ -38,7 +38,7 @@ import { createCognitoAuthHook } from '../middleware/auth';
 // Helpers
 // ---------------------------------------------------------------------------
 
-const MOCK_USER_ID = '00000000-0000-4000-a000-000000000001'; // matches COGNITO_BYPASS default in auth.ts
+const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001'; // auth.ts fallback when COGNITO_MOCK_USER_ID unset
 const INTERVIEW_ID = 'interview-test-abc';
 
 function makeMockPrisma(
@@ -91,7 +91,7 @@ async function buildTestApp(
     | null = undefined,
   envOverrides: Record<string, string> = {},
 ) {
-  Object.assign(process.env, { COGNITO_BYPASS: 'true', ...envOverrides });
+  Object.assign(process.env, { COGNITO_BYPASS: 'true', COGNITO_MOCK_USER_ID: MOCK_USER_ID, ...envOverrides });
   const app = Fastify({ logger: false });
   const mockPrisma = makeMockPrisma(prismaOverride);
   app.addHook('onRequest', createCognitoAuthHook(mockPrisma as any));
