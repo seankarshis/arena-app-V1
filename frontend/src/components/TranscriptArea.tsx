@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
+import { renderInterviewerText } from '@/lib/formatLlmText';
 import type { Turn } from '@/hooks/useInterviewState';
 
 interface Props {
@@ -75,7 +76,7 @@ export default function TranscriptArea({ transcript }: Props) {
             >
               {/* Question */}
               <p className="font-semibold text-graphite text-sm mb-1.5 leading-normal">
-                Q{index + 1}: {turn.questionText}
+                Q{index + 1}: {renderInterviewerText(turn.questionText)}
               </p>
 
               {/* Answer */}

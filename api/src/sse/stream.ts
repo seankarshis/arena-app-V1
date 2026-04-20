@@ -200,6 +200,21 @@ export function removeSSEConnection(interviewId: string): void {
   sseRegistry.delete(interviewId);
 }
 
+/**
+ * Fire a single `token` SSE event for the active connection, if any.
+ *
+ * Invoked from the interview engine's `onPreDelimiterToken` callback for each
+ * pre-delimiter chunk emitted by the streaming Claude client. Safe on no-op:
+ * returns silently when no connection is registered or the token is empty.
+ * The DelimiterBoundaryDetector guarantees the state-update block never reaches
+ * this path, so the payload is conversational text only.
+ */
+export function streamTokenToSSE(interviewId: string, content: string): void {
+  const conn = sseRegistry.get(interviewId);
+  if (!conn || !content) return;
+  conn.send({ type: 'token', content });
+}
+
 /** Clear all registry entries. For testing only. */
 export function clearSSERegistry(): void {
   sseRegistry.clear();
@@ -534,8 +549,10 @@ export async function pushTurnToSSE(interviewId: string): Promise<void> {
   const interviewComplete =
     session.requiredRemaining.length === 0 && session.optionalRemaining.length === 0;
 
-  // Emit the full text as a single token to trigger LLM_STREAMING state on the frontend
-  conn.send({ type: 'token', content: llmText });
+  // Per-token streaming is handled live from the interview engine via
+  // streamTokenToSSE during the LLM stream. By the time pushTurnToSSE runs,
+  // the frontend has already transitioned to LLM_STREAMING with the full
+  // text buffered. Only sentence_complete and stream_complete remain here.
 
   // Emit sentence_complete events for TTS chunking
   const detector = new SentenceBoundaryDetector();

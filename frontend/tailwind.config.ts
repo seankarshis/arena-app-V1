@@ -55,11 +55,16 @@ const config: Config = {
           '0%, 100%': { opacity: '1' },
           '50%': { opacity: '0.3' },
         },
+        'arena-thinking-dot': {
+          '0%, 80%, 100%': { opacity: '0.25', transform: 'translateY(0)' },
+          '40%': { opacity: '1', transform: 'translateY(-2px)' },
+        },
       },
       animation: {
         'arena-blink': 'arena-blink 1s step-end infinite',
         'arena-ptt-pulse': 'arena-ptt-pulse 1.5s ease-in-out infinite',
         'arena-reconnect-pulse': 'arena-reconnect-pulse 1.5s ease-in-out infinite',
+        'arena-thinking-dot': 'arena-thinking-dot 1.1s ease-in-out infinite',
       },
     },
   },

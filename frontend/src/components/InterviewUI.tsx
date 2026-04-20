@@ -10,6 +10,8 @@ import type {
 } from '@/hooks/useInterviewState';
 import TranscriptArea from './TranscriptArea';
 import CompletionSummary from './CompletionSummary';
+import { ThinkingIndicator } from './ui/ThinkingIndicator';
+import { renderInterviewerText } from '@/lib/formatLlmText';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -278,13 +280,11 @@ export default function InterviewUI({ state, session, actions }: Props) {
       {/* ---- Current question panel ---- */}
       <div className="bg-dark-maroon py-7 px-8 shrink-0 relative" style={{ minHeight: 100 }}>
         <p className="text-ivory text-lg leading-relaxed pr-[72px]">
-          {questionPanelText || '\u00a0'}
+          {questionPanelText ? renderInterviewerText(questionPanelText) : '\u00a0'}
           {isStreaming && questionPanelText && (
             <span className="inline-block w-0.5 h-[1.1em] bg-ivory ml-0.5 align-text-bottom animate-arena-blink" />
           )}
-          {isThinking && (
-            <span className="text-ivory/50">···</span>
-          )}
+          {isThinking && <ThinkingIndicator />}
         </p>
 
         {/* Skip button */}

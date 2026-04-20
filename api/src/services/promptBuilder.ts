@@ -92,6 +92,7 @@ export function _clearTier1Cache(): void {
 
 const SPEC_VERSION_MAP: Record<string, string> = {
   v1: path.resolve(__dirname, '../../../brain/specs/interviewer-prompt-v1.md'),
+  v2: path.resolve(__dirname, '../../../brain/specs/interviewer-prompt-v2.md'),
 };
 
 function resolveSpecPath(promptVersion: string): string {

@@ -74,6 +74,7 @@ import {
   validationError,
 } from '../middleware/errors';
 import { clickHouseWrite } from '../observability/clickhouseWriter';
+import { streamTokenToSSE } from '../sse/stream';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -82,7 +83,7 @@ import { clickHouseWrite } from '../observability/clickhouseWriter';
 const DEFAULT_LLM_MODEL = 'claude-sonnet-4-20250514';
 const MAX_LLM_TOKENS = 4096;
 const EVENT_BUS_NAME = process.env.EVENT_BUS_NAME ?? 'arena-event-bus';
-const PROMPT_VERSION = 'v1';
+const PROMPT_VERSION = 'v2';
 const STATE_UPDATE_DELIMITER = '---STATE_UPDATE---';
 const MAX_CONSECUTIVE_PARSE_FAILURES = 3;
 
@@ -974,13 +975,12 @@ async function submitResponseV2Coverage(
         role: m.role,
         content: m.content,
       })),
-      // Pass-through token sink. SSE wiring hooks here in a later milestone;
-      // today the canonical conversational text is read from
-      // `streamResult.preDelimiterContent` after streaming completes. The
-      // callback is still supplied so the DelimiterBoundaryDetector actually
-      // runs end-to-end in the underlying client (observable via tests).
-      onPreDelimiterToken: (_token: string) => {
-        // intentionally no-op
+      // Forward each pre-delimiter chunk to the SSE connection so the frontend
+      // renders tokens live. The DelimiterBoundaryDetector guarantees only
+      // conversational text reaches this callback — the ---STATE_UPDATE---
+      // block stays server-side.
+      onPreDelimiterToken: (token: string) => {
+        streamTokenToSSE(interviewId, token);
       },
     });
   } catch (err) {
