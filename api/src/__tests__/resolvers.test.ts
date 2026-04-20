@@ -54,6 +54,7 @@ function createMockPrisma() {
       update: vi.fn(),
       delete: vi.fn(),
       count: vi.fn().mockResolvedValue(0),
+      aggregate: vi.fn().mockResolvedValue({ _max: { sequenceOrder: 0 } }),
     },
     user: {
       findUnique: vi.fn().mockResolvedValue(null),
@@ -826,7 +827,7 @@ describe('Mutation.createTemplate', () => {
     );
     expect(result).toEqual(template);
     expect(ctx.prisma.interviewTemplate.create).toHaveBeenCalledWith({
-      data: { name: 'Interview', description: 'desc', status: 'draft' },
+      data: { name: 'Interview', description: 'desc', systemPrompt: null, status: 'draft' },
     });
   });
 });
@@ -1540,37 +1541,6 @@ describe('Mutation.updateCleanedContent', () => {
         processingStatus: 'completed',
       },
     });
-  });
-});
-
-// =========================================================================
-// Interview engine stubs
-// =========================================================================
-describe('Interview engine stubs', () => {
-  it('startInterview throws not implemented', async () => {
-    await expect(
-      M.startInterview({}, { templateId: 't1' }, userCtx()),
-    ).rejects.toMatchObject({ extensions: { code: 'INTERNAL_ERROR' } });
-  });
-
-  it('submitResponse throws not implemented', async () => {
-    await expect(
-      M.submitResponse(
-        {},
-        { interviewId: 'i1', rawTranscription: 'x', inputMode: 'voice' },
-        userCtx(),
-      ),
-    ).rejects.toMatchObject({ extensions: { code: 'INTERNAL_ERROR' } });
-  });
-
-  it('saveDraft throws not implemented', async () => {
-    await expect(
-      M.saveDraft(
-        {},
-        { interviewId: 'i1', content: 'x', inputMode: 'typed' },
-        userCtx(),
-      ),
-    ).rejects.toMatchObject({ extensions: { code: 'INTERNAL_ERROR' } });
   });
 });
 

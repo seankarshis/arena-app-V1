@@ -38,7 +38,7 @@ import { getSession, updateSession } from '../services/session';
 import { getSSEConnection } from '../sse/stream';
 import { pauseInterview } from '../services/interviewSession';
 import type { InterviewSession } from '../services/session';
-import { cognitoAuthHook } from '../middleware/auth';
+import { createCognitoAuthHook } from '../middleware/auth';
 
 const mockGetSession = vi.mocked(getSession);
 const mockUpdateSession = vi.mocked(updateSession);
@@ -531,7 +531,7 @@ describe('POST /api/heartbeat', () => {
   async function buildApp(envOverrides: Record<string, string> = {}) {
     Object.assign(process.env, { COGNITO_BYPASS: 'true', ...envOverrides });
     const app = Fastify({ logger: false });
-    app.addHook('onRequest', cognitoAuthHook);
+    app.addHook('onRequest', createCognitoAuthHook({} as any));
     await app.register(inactivityPlugin);
     await app.ready();
     return app;

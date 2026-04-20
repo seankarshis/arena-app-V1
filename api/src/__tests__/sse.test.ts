@@ -32,13 +32,13 @@ import {
   type SentenceCompleteEvent,
   type StreamCompleteEvent,
 } from '../sse/stream';
-import { cognitoAuthHook } from '../middleware/auth';
+import { createCognitoAuthHook } from '../middleware/auth';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001'; // matches COGNITO_BYPASS default
+const MOCK_USER_ID = '00000000-0000-4000-a000-000000000001'; // matches COGNITO_BYPASS default in auth.ts
 const INTERVIEW_ID = 'interview-test-abc';
 
 function makeMockPrisma(
@@ -93,9 +93,10 @@ async function buildTestApp(
 ) {
   Object.assign(process.env, { COGNITO_BYPASS: 'true', ...envOverrides });
   const app = Fastify({ logger: false });
-  app.addHook('onRequest', cognitoAuthHook);
+  const mockPrisma = makeMockPrisma(prismaOverride);
+  app.addHook('onRequest', createCognitoAuthHook(mockPrisma as any));
   await app.register(ssePlugin, {
-    prisma: makeMockPrisma(prismaOverride) as Parameters<typeof ssePlugin>[1]['prisma'],
+    prisma: mockPrisma as Parameters<typeof ssePlugin>[1]['prisma'],
   });
   return app;
 }
@@ -556,8 +557,9 @@ describe('GET /api/tts-token', () => {
     process.env.COGNITO_BYPASS = 'false';
     process.env.COGNITO_USER_POOL_ID = 'us-east-2_test';
     const app = Fastify({ logger: false });
-    app.addHook('onRequest', cognitoAuthHook);
-    await app.register(ssePlugin, { prisma: makeMockPrisma() as Parameters<typeof ssePlugin>[1]['prisma'] });
+    const mockPrisma = makeMockPrisma();
+    app.addHook('onRequest', createCognitoAuthHook(mockPrisma as any));
+    await app.register(ssePlugin, { prisma: mockPrisma as Parameters<typeof ssePlugin>[1]['prisma'] });
 
     const response = await app.inject({ method: 'GET', url: '/api/tts-token' });
     expect(response.statusCode).toBe(401);
@@ -614,9 +616,10 @@ describe('GET /api/interview/:id/stream', () => {
     process.env.COGNITO_BYPASS = 'false';
     process.env.COGNITO_USER_POOL_ID = 'us-east-2_test';
     const app = Fastify({ logger: false });
-    app.addHook('onRequest', cognitoAuthHook);
+    const mockPrisma = makeMockPrisma();
+    app.addHook('onRequest', createCognitoAuthHook(mockPrisma as any));
     await app.register(ssePlugin, {
-      prisma: makeMockPrisma() as Parameters<typeof ssePlugin>[1]['prisma'],
+      prisma: mockPrisma as Parameters<typeof ssePlugin>[1]['prisma'],
     });
 
     const response = await app.inject({
